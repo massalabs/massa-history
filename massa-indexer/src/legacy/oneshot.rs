@@ -40,6 +40,7 @@ use crate::{
     legacy::source::LegacySource,
     metrics::Metrics,
     model::{BlockStatus, SlotState, SlotStatus},
+    proto::indexer::v1::FinalSlotResponse,
 };
 use futures::stream::StreamExt;
 use std::sync::Arc;
@@ -222,11 +223,31 @@ pub async fn run_oneshot_import(
                 skipped += 1;
             }
             FetchKind::Empty => {
-                // Genuinely no row in legacy for this slot.
+                // Genuinely no row in legacy for this slot. Record a FINAL
+                // miss so we never re-bill AWS for it and peers can serve
+                // `final_known=true` — otherwise contiguous DDB gaps
+                // (e.g. storer outages) leave swiss-cheese holes that
+                // permanently stall peer catch-up on sibling indexers.
                 if let Some(m) = &metrics {
                     m.legacy_ddb_rpcs_total
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
+                let miss = FinalSlotResponse {
+                    period: outcome.period,
+                    thread: u32::from(outcome.thread),
+                    final_known: true,
+                    is_miss: true,
+                    ..Default::default()
+                };
+                if tx
+                    .send(Event::LegacyPatch(Box::new(miss)))
+                    .await
+                    .is_err()
+                {
+                    debug!("AWS one-shot: ingest channel closed");
+                    break;
+                }
+                imported += 1;
             }
             FetchKind::Error(e) => {
                 errored += 1;
