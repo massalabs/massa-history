@@ -301,23 +301,30 @@ fn needs_fetch(
         }
         SlotStatus::Final => {
             let c = s.completeness;
-            let block = enabled.filled_blocks
-                && requestable.block
-                && !c.block_body_stored
-                && !s.is_miss;
-            let exec = enabled.slot_execution_outputs
-                && requestable.exec_output
-                && !c.exec_output_final;
-            let transfers =
-                enabled.transfers && requestable.transfers && !c.transfers_stored;
-            if !block && !exec && !transfers {
-                None
-            } else {
+            // Structural completeness for the genesis walker: once a FINAL
+            // slot has its block body (or is a miss), stop re-querying peers
+            // for exec/transfers on every sweep.
+            //
+            // Why: legacy imports and peer patches leave
+            // `transfers_stored` / `exec_output_final` false when those
+            // lists are empty (see `apply_legacy_patch`). Asking peers
+            // again does not flip the flags — the peer returns the same
+            // empty lists — so the walker was burning ~50 ms × tens of
+            // millions of already-bodied slots per sweep and never
+            // reaching genesis. Live ingest still fills exec/transfers
+            // for recent slots as they arrive from the node.
+            if c.block_body_stored || s.is_miss {
+                return None;
+            }
+            let block = enabled.filled_blocks && requestable.block;
+            if block {
                 Some(FinalSlotParts {
-                    block,
-                    exec_output: exec,
-                    transfers,
+                    block: true,
+                    exec_output: enabled.slot_execution_outputs && requestable.exec_output,
+                    transfers: enabled.transfers && requestable.transfers,
                 })
+            } else {
+                None
             }
         }
         SlotStatus::Candidate => None,
@@ -371,8 +378,9 @@ mod tests {
     #[test]
     fn final_miss_skipped_when_block_body_marked() {
         // A miss slot has block_body_stored=true (vacuously) and is_miss=true.
-        // exec_output_final and transfers_stored may still be missing —
-        // those are still legitimate fetches.
+        // Even if exec/transfers flags are still false, the walker must
+        // not re-query — empty peer replies would never flip those flags
+        // and would wedge genesis catch-up.
         let mut s = SlotState::fresh(Slot::new(1, 0), 0);
         s.status = SlotStatus::Final;
         s.is_miss = true;
@@ -381,10 +389,7 @@ mod tests {
             exec_output_final: false,
             ..Default::default()
         };
-        let m = needs_fetch(Some(&s), &StreamsExpected::all(), &all_parts()).unwrap();
-        assert!(!m.block, "miss slot must not re-request block body");
-        assert!(m.exec_output);
-        assert!(m.transfers);
+        assert!(needs_fetch(Some(&s), &StreamsExpected::all(), &all_parts()).is_none());
     }
 
     #[test]
@@ -432,7 +437,9 @@ mod tests {
     }
 
     #[test]
-    fn final_partial_asks_only_for_missing() {
+    fn final_with_body_skips_even_if_transfers_flag_false() {
+        // Regression: perpetual transfer re-fetch on bodied FINAL slots
+        // prevented indexer2 from walking below ~period 3.4M.
         let mut s = SlotState::fresh(Slot::new(1, 0), 0);
         s.status = SlotStatus::Final;
         s.completeness = SlotCompleteness {
@@ -441,9 +448,20 @@ mod tests {
             transfers_stored: false,
             ..Default::default()
         };
+        assert!(needs_fetch(Some(&s), &StreamsExpected::all(), &all_parts()).is_none());
+    }
+
+    #[test]
+    fn final_without_body_requests_block() {
+        let mut s = SlotState::fresh(Slot::new(1, 0), 0);
+        s.status = SlotStatus::Final;
+        s.completeness = SlotCompleteness {
+            block_body_stored: false,
+            ..Default::default()
+        };
         let m = needs_fetch(Some(&s), &StreamsExpected::all(), &all_parts()).unwrap();
-        assert!(!m.block);
-        assert!(!m.exec_output);
+        assert!(m.block);
+        assert!(m.exec_output);
         assert!(m.transfers);
     }
 

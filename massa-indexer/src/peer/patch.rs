@@ -355,14 +355,16 @@ pub fn apply_peer_patch(
 
     // --- Exec output ------------------------------------------------------
     // The exec_output part ships FOUR things: sc_events, executed_op_ids,
-    // sc_event_count, and async_msgs. Any of them being non-empty counts
-    // as "the peer sent an exec_output part" — a slot can have zero sc
-    // events but still have async-pool updates, and vice versa.
-    let exec_part_requested = !resp.executed_op_ids.is_empty()
+    // sc_event_count, and async_msgs. Any of them being non-empty means
+    // there is payload to apply. An empty response from a FINAL peer is
+    // still authoritative ("this slot has no exec output") — we mark
+    // `exec_output_final` once we already have a block body / miss, so
+    // the backfill walker does not re-query the same slot forever.
+    let exec_part_present = !resp.executed_op_ids.is_empty()
         || resp.sc_event_count > 0
         || !resp.sc_events.is_empty()
         || !resp.async_msgs.is_empty();
-    if exec_part_requested && !state.completeness.exec_output_final {
+    if exec_part_present && !state.completeness.exec_output_final {
         apply_exec_part(db, resp)?;
         if state.executed_op_ids.is_empty() {
             state.executed_op_ids = resp
@@ -374,18 +376,26 @@ pub fn apply_peer_patch(
         state.sc_event_count = resp.sc_event_count;
         state.completeness.exec_output_final = true;
         out.exec_applied = true;
+    } else if !state.completeness.exec_output_final
+        && (state.completeness.block_body_stored || state.is_miss)
+    {
+        // Peer asserted FINAL and we have the block (or miss) but no exec
+        // payload — settle the flag so catch-up can walk past this slot.
+        state.completeness.exec_output_final = true;
     }
 
     // --- Transfers --------------------------------------------------------
-    // A transfers part is shipped whenever `transfers` or `deferred_calls`
-    // has entries. Deferred-call pools can receive updates via transfer
-    // reconciliation even if the slot itself had zero transfers decoded
-    // (edge case, but defensively handled).
+    // Same empty-list semantics as exec: a FINAL peer with no transfer
+    // rows means "none for this slot", not "try me again next sweep".
     let transfers_part_present = !resp.transfers.is_empty() || !resp.deferred_calls.is_empty();
     if transfers_part_present && !state.completeness.transfers_stored {
         apply_transfers_part(db, resp, now_ms)?;
         state.completeness.transfers_stored = true;
         out.transfers_applied = true;
+    } else if !state.completeness.transfers_stored
+        && (state.completeness.block_body_stored || state.is_miss)
+    {
+        state.completeness.transfers_stored = true;
     }
 
     // --- Final block status propagation ----------------------------------
