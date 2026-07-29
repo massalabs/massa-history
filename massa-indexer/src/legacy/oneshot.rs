@@ -33,6 +33,15 @@
 //!
 //! That means the live indexer keeps making forward progress on the
 //! head while this worker fills the historical tail.
+//!
+//! ### Transient DDB errors
+//!
+//! An AWS/`ProvisionedThroughput` blip is **not** "legacy had no data".
+//! Failed lookups leave the slot uncovered and are retried in-process
+//! (backoff) and, if any remain at end of pass, via a full re-sweep.
+//! Only a confirmed `Ok(None)` from DDB is recorded as a FINAL miss.
+//! Do **not** disable `[legacy_ddb]` until a pass completes with
+//! `errored = 0`.
 
 use crate::{
     db::Db,
@@ -47,6 +56,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{debug, info, warn};
+
+/// Attempts per slot before counting a hard error for the pass.
+const FETCH_ATTEMPTS: u32 = 8;
 
 /// Tunables for the one-shot importer.
 #[derive(Debug, Clone)]
@@ -114,14 +126,14 @@ struct SlotOutcome {
 }
 
 /// Run the importer to completion. Returns when:
-///   * the worker reaches `(0, 0)`, OR
+///   * a full pass finishes with **zero** hard DDB errors, OR
 ///   * the ingest channel closes (indexer shutdown).
 ///
-/// Errors emitted by the legacy source are logged and counted via
-/// `metrics.legacy_ddb_errors_total`, then the worker continues with
-/// the next slot. We do not bail on transient AWS failures — they
-/// happen, and abandoning the run would force the operator to
-/// restart the indexer just to recover.
+/// Transient AWS failures are retried per-slot with backoff. Any slot
+/// that still fails after that is left **uncovered** (never written as
+/// a miss) and the whole window is re-swept until those gaps are filled
+/// or confirmed empty. Abandoning errored slots would silently drop
+/// history that legacy still holds.
 pub async fn run_oneshot_import(
     db: Db,
     source: Arc<dyn LegacySource>,
@@ -136,6 +148,7 @@ pub async fn run_oneshot_import(
         rate_limit_ms = cfg.rate_limit.as_millis() as u64,
         thread_count = cfg.thread_count,
         concurrency,
+        fetch_attempts = FETCH_ATTEMPTS,
         "AWS one-shot importer starting"
     );
 
@@ -155,11 +168,65 @@ pub async fn run_oneshot_import(
     };
 
     let floor = cfg.min_period.unwrap_or(0);
-    info!(
-        start_period = head_period,
-        floor, "AWS one-shot importer: walking down"
-    );
+    let mut pass: u32 = 0;
 
+    loop {
+        if tx.is_closed() {
+            return;
+        }
+        pass += 1;
+        info!(
+            pass,
+            start_period = head_period,
+            floor,
+            "AWS one-shot importer: walking down"
+        );
+
+        let errored = run_oneshot_pass(
+            &db,
+            &source,
+            &tx,
+            &cfg,
+            metrics.as_ref(),
+            head_period,
+            floor,
+            concurrency,
+            pass,
+        )
+        .await;
+
+        if tx.is_closed() {
+            return;
+        }
+        if errored == 0 {
+            info!(
+                pass,
+                "AWS one-shot importer COMPLETE (errored=0) — safe to disable [legacy_ddb] and restart to stop hitting AWS"
+            );
+            return;
+        }
+        warn!(
+            pass,
+            errored,
+            "AWS one-shot: pass finished with hard errors — uncovered slots will be retried after pause"
+        );
+        sleep(Duration::from_secs(30)).await;
+    }
+}
+
+/// One descending sweep over `[floor, head_period]`. Returns the number
+/// of slots that still failed after per-slot retries (left uncovered).
+async fn run_oneshot_pass(
+    db: &Db,
+    source: &Arc<dyn LegacySource>,
+    tx: &EventTx,
+    cfg: &OneShotConfig,
+    metrics: Option<&Arc<Metrics>>,
+    head_period: u64,
+    floor: u64,
+    concurrency: usize,
+    pass: u32,
+) -> u64 {
     // Descending (period, thread) cursor across the whole window. The
     // iterator is lazy, so the 100M+ slot space costs no memory — the
     // `buffer_unordered` adapter pulls items only as concurrency frees
@@ -194,11 +261,7 @@ pub async fn run_oneshot_import(
                 if rate > Duration::ZERO {
                     sleep(rate).await;
                 }
-                let kind = match source.fetch_slot(period, thread).await {
-                    Ok(Some(fetch)) => FetchKind::Filled(Box::new(fetch.resp)),
-                    Ok(None) => FetchKind::Empty,
-                    Err(e) => FetchKind::Error(e.to_string()),
-                };
+                let kind = fetch_slot_resilient(source.as_ref(), period, thread).await;
                 SlotOutcome {
                     period,
                     thread,
@@ -223,12 +286,10 @@ pub async fn run_oneshot_import(
                 skipped += 1;
             }
             FetchKind::Empty => {
-                // Genuinely no row in legacy for this slot. Record a FINAL
-                // miss so we never re-bill AWS for it and peers can serve
-                // `final_known=true` — otherwise contiguous DDB gaps
-                // (e.g. storer outages) leave swiss-cheese holes that
-                // permanently stall peer catch-up on sibling indexers.
-                if let Some(m) = &metrics {
+                // Confirmed no row in DDB. Record a FINAL miss so we never
+                // re-bill AWS and peers can serve `final_known=true`.
+                // Never do this on Error — that would hide real history.
+                if let Some(m) = metrics {
                     m.legacy_ddb_rpcs_total
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
@@ -251,7 +312,7 @@ pub async fn run_oneshot_import(
             }
             FetchKind::Error(e) => {
                 errored += 1;
-                if let Some(m) = &metrics {
+                if let Some(m) = metrics {
                     m.legacy_ddb_errors_total
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     m.legacy_ddb_rpcs_total
@@ -261,11 +322,12 @@ pub async fn run_oneshot_import(
                     error = %e,
                     period = outcome.period,
                     thread = outcome.thread,
-                    "AWS one-shot: fetch errored, continuing"
+                    pass,
+                    "AWS one-shot: fetch still errored after retries — leaving uncovered"
                 );
             }
             FetchKind::Filled(resp) => {
-                if let Some(m) = &metrics {
+                if let Some(m) = metrics {
                     m.legacy_ddb_rpcs_total
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     m.legacy_ddb_slots_filled_total
@@ -284,6 +346,7 @@ pub async fn run_oneshot_import(
         // so `current_period` is an approximate frontier indicator.
         if last_log.elapsed() >= Duration::from_secs(10) {
             info!(
+                pass,
                 imported,
                 skipped,
                 errored,
@@ -294,12 +357,43 @@ pub async fn run_oneshot_import(
         }
     }
 
-    info!(
-        imported,
-        skipped,
-        errored,
-        "AWS one-shot importer COMPLETE — disable [legacy_ddb] enabled and restart to stop hitting AWS"
-    );
+    info!(pass, imported, skipped, errored, "AWS one-shot: pass finished");
+    errored
+}
+
+/// Ask DDB for a slot, retrying transient errors with exponential backoff.
+/// `Ok(None)` (confirmed empty) and `Ok(Some)` return immediately.
+async fn fetch_slot_resilient(
+    source: &dyn LegacySource,
+    period: u64,
+    thread: u8,
+) -> FetchKind {
+    let mut last_err = String::new();
+    for attempt in 0..FETCH_ATTEMPTS {
+        match source.fetch_slot(period, thread).await {
+            Ok(Some(fetch)) => return FetchKind::Filled(Box::new(fetch.resp)),
+            Ok(None) => return FetchKind::Empty,
+            Err(e) => {
+                last_err = e.to_string();
+                if attempt + 1 >= FETCH_ATTEMPTS {
+                    break;
+                }
+                let backoff =
+                    Duration::from_millis(200u64.saturating_mul(2u64.pow(attempt.min(6))));
+                warn!(
+                    error = %last_err,
+                    period,
+                    thread,
+                    attempt = attempt + 1,
+                    attempts = FETCH_ATTEMPTS,
+                    backoff_ms = backoff.as_millis() as u64,
+                    "AWS one-shot: fetch errored, retrying"
+                );
+                sleep(backoff).await;
+            }
+        }
+    }
+    FetchKind::Error(last_err)
 }
 
 /// Block until the indexer has its first FINAL slot, or the ingest
@@ -483,12 +577,13 @@ mod tests {
     }
 
     /// End-to-end: the importer walks down from `max_period` to (0,0)
-    /// and emits one `LegacyPatch` per slot the stub has data for,
-    /// skips the rest, and exits.
+    /// and emits a `LegacyPatch` for every slot — filled when the stub
+    /// has data, FINAL miss when DDB/stub returns empty — then exits.
     #[tokio::test]
     async fn imports_two_slots_and_exits() {
         let (db, _dir) = open_db();
-        // Stub has data for (1,0) and (0,1) only.
+        // Stub has data for (1,0) and (0,1) only. Window is period 0..=1
+        // × threads 0..=1 → four slots: two filled + two empty-misses.
         let mut rows: HashMap<(u64, u8), LegacyFetch> = HashMap::new();
         rows.insert((1, 0), make_fetch(1, 0));
         rows.insert((0, 1), make_fetch(0, 1));
@@ -509,7 +604,10 @@ mod tests {
                 count += 1;
             }
         }
-        assert_eq!(count, 2, "imported the two stubbed slots and stopped");
+        assert_eq!(
+            count, 4,
+            "two filled + two confirmed-empty misses, then stop"
+        );
     }
 
     /// The importer skips slots a richer source (live/peer) has
@@ -558,14 +656,14 @@ mod tests {
             .load(std::sync::atomic::Ordering::SeqCst);
         assert_eq!(calls, 3, "covered slot was skipped, others queried");
 
-        // Only (0,0) had a stub entry left — it's the only patch shipped.
+        // (0,0) filled + (1,1) and (0,1) confirmed-empty misses.
         let mut count = 0;
         while let Ok(ev) = rx.try_recv() {
             if matches!(ev, Event::LegacyPatch(_)) {
                 count += 1;
             }
         }
-        assert_eq!(count, 1);
+        assert_eq!(count, 3);
     }
 
     /// `min_period` bounds the walk on the bottom side. With
