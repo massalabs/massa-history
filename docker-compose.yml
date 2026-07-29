@@ -1,0 +1,84 @@
+# Reference production docker-compose for massahistory.
+#
+# Brings up:
+#   * `indexer`  — massa-indexer V2 (REST+SSE on :8080, peer gRPC on :9443)
+#   * `explorer` — massa-explorer SPA (nginx on :8081 on the host)
+#
+# This compose file does NOT run a Massa node; point `INDEXER_NODE_GRPC_URL`
+# at your existing node (or add one as a sibling service). TLS termination
+# is expected to be handled by a reverse proxy upstream of compose (nginx,
+# Caddy, Traefik, Cloudflare, …); see `nginx/indexer.conf.sample` for a
+# reference configuration.
+#
+# Usage:
+#   docker compose build
+#   docker compose up -d
+#   docker compose logs -f indexer
+#   docker compose down
+
+services:
+  indexer:
+    image: massa-indexer:local
+    build:
+      context: .
+      dockerfile: massa-indexer/Dockerfile
+    restart: unless-stopped
+    environment:
+      # REST bind is already 0.0.0.0:8080 in the shipped config; override via env if needed.
+      INDEXER_NODE_GRPC_URL: "${INDEXER_NODE_GRPC_URL:-http://host.docker.internal:33037}"
+      INDEXER_GENERAL_NETWORK: "${INDEXER_NETWORK:-mainnet}"
+      INDEXER_REST_CORS: "${INDEXER_CORS:-*}"
+      RUST_LOG: "info,massa_indexer=info"
+      RUST_LOG_JSON: "1"
+    volumes:
+      - indexer_data:/data
+      # Uncomment to supply your own config:
+      # - ./massa-indexer/config/indexer.production.toml:/etc/massa-indexer/indexer.toml:ro
+    ports:
+      - "127.0.0.1:8080:8080"   # REST + SSE — front with TLS in prod
+      - "0.0.0.0:9443:9443"     # Peer gRPC — exposed to other indexers
+    # `host.docker.internal` is already provided on Docker Desktop; on Linux
+    # we need this extra_hosts entry so the same compose file works there.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      # Overrides the image HEALTHCHECK with the same command for compose.
+      test: ["CMD", "/usr/local/bin/massa-indexer", "healthcheck",
+             "--config", "/etc/massa-indexer/indexer.toml"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  explorer:
+    image: massa-explorer:local
+    build:
+      context: .
+      dockerfile: massa-explorer/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      indexer:
+        condition: service_healthy
+    environment:
+      MASSA_EXPLORER_DEFAULT_NETWORK: "${MASSA_EXPLORER_DEFAULT_NETWORK:-mainnet}"
+      # Browsers hit the indexer directly (CORS must allow the explorer origin),
+      # so list public URLs, not the internal service name.
+      MASSA_EXPLORER_MAINNET_ENDPOINTS: "${MASSA_EXPLORER_MAINNET_ENDPOINTS:-http://localhost:8080}"
+      MASSA_EXPLORER_BUILDNET_ENDPOINTS: "${MASSA_EXPLORER_BUILDNET_ENDPOINTS:-http://localhost:8080}"
+    ports:
+      - "127.0.0.1:8081:8080"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+volumes:
+  indexer_data:
+    driver: local

@@ -1,0 +1,11 @@
+# Cargo configuration for the indexer crate.
+#
+# `librocksdb-sys` 0.16.0 (RocksDB 8.10) ships C++ headers that rely on
+# implicit `<cstdint>` inclusion; GCC 15+ tightened header transitivity
+# rules and now refuses to find `uint64_t` in those headers. We force
+# `-include cstdint` for the C++ build only — the C portion of the
+# tree (jemalloc-sys, ring, …) must NOT receive this flag.
+#
+# Restricted to the host triple so cross-builds inherit nothing.
+[env]
+CXXFLAGS_x86_64-unknown-linux-gnu = "-include cstdint"

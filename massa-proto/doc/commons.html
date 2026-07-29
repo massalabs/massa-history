@@ -1,0 +1,6008 @@
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <title>Protocol Documentation</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Ubuntu:400,700,400italic"/>
+    <style>
+      body {
+        width: 60em;
+        margin: 1em auto;
+        color: #222;
+        font-family: "Ubuntu", sans-serif;
+        padding-bottom: 4em;
+      }
+
+      h1 {
+        font-weight: normal;
+        border-bottom: 1px solid #aaa;
+        padding-bottom: 0.5ex;
+      }
+
+      h2 {
+        border-bottom: 1px solid #aaa;
+        padding-bottom: 0.5ex;
+        margin: 1.5em 0;
+      }
+
+      h3 {
+        font-weight: normal;
+        border-bottom: 1px solid #aaa;
+        padding-bottom: 0.5ex;
+      }
+
+      a {
+        text-decoration: none;
+        color: #567e25;
+      }
+
+      table {
+        width: 100%;
+        font-size: 80%;
+        border-collapse: collapse;
+      }
+
+      thead {
+        font-weight: 700;
+        background-color: #dcdcdc;
+      }
+
+      tbody tr:nth-child(even) {
+        background-color: #fbfbfb;
+      }
+
+      td {
+        border: 1px solid #ccc;
+        padding: 0.5ex 2ex;
+      }
+
+      td p {
+        text-indent: 1em;
+        margin: 0;
+      }
+
+      td p:nth-child(1) {
+        text-indent: 0;  
+      }
+
+       
+      .field-table td:nth-child(1) {  
+        width: 10em;
+      }
+      .field-table td:nth-child(2) {  
+        width: 10em;
+      }
+      .field-table td:nth-child(3) {  
+        width: 6em;
+      }
+      .field-table td:nth-child(4) {  
+        width: auto;
+      }
+
+       
+      .extension-table td:nth-child(1) {  
+        width: 10em;
+      }
+      .extension-table td:nth-child(2) {  
+        width: 10em;
+      }
+      .extension-table td:nth-child(3) {  
+        width: 10em;
+      }
+      .extension-table td:nth-child(4) {  
+        width: 5em;
+      }
+      .extension-table td:nth-child(5) {  
+        width: auto;
+      }
+
+       
+      .enum-table td:nth-child(1) {  
+        width: 10em;
+      }
+      .enum-table td:nth-child(2) {  
+        width: 10em;
+      }
+      .enum-table td:nth-child(3) {  
+        width: auto;
+      }
+
+       
+      .scalar-value-types-table tr {
+        height: 3em;
+      }
+
+       
+      #toc-container ul {
+        list-style-type: none;
+        padding-left: 1em;
+        line-height: 180%;
+        margin: 0;
+      }
+      #toc > li > a {
+        font-weight: bold;
+      }
+
+       
+      .file-heading {
+        width: 100%;
+        display: table;
+        border-bottom: 1px solid #aaa;
+        margin: 4em 0 1.5em 0;
+      }
+      .file-heading h2 {
+        border: none;
+        display: table-cell;
+      }
+      .file-heading a {
+        text-align: right;
+        display: table-cell;
+      }
+
+       
+      .badge {
+        width: 1.6em;
+        height: 1.6em;
+        display: inline-block;
+
+        line-height: 1.6em;
+        text-align: center;
+        font-weight: bold;
+        font-size: 60%;
+
+        color: #89ba48;
+        background-color: #dff0c8;
+
+        margin: 0.5ex 1em 0.5ex -1em;
+        border: 1px solid #fbfbfb;
+        border-radius: 1ex;
+      }
+    </style>
+
+    
+    <link rel="stylesheet" type="text/css" href="stylesheet.css"/>
+  </head>
+
+  <body>
+
+    <h1 id="title">Protocol Documentation</h1>
+
+    <h2>Table of Contents</h2>
+
+    <div id="toc-container">
+      <ul id="toc">
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2fdatastore.proto">massa/model/v1/datastore.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.AddressKeyEntry"><span class="badge">M</span>AddressKeyEntry</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.AddressKeysEntries"><span class="badge">M</span>AddressKeysEntries</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.DatastoreEntry"><span class="badge">M</span>DatastoreEntry</a>
+                </li>
+              
+              
+              
+              
+            </ul>
+          </li>
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2fstaker.proto">massa/model/v1/staker.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.StakerEntry"><span class="badge">M</span>StakerEntry</a>
+                </li>
+              
+              
+              
+              
+            </ul>
+          </li>
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2fdraw.proto">massa/model/v1/draw.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.EndorsementDraw"><span class="badge">M</span>EndorsementDraw</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.SlotDraw"><span class="badge">M</span>SlotDraw</a>
+                </li>
+              
+              
+              
+              
+            </ul>
+          </li>
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2fversioning.proto">massa/model/v1/versioning.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.MipComponentEntry"><span class="badge">M</span>MipComponentEntry</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.MipInfo"><span class="badge">M</span>MipInfo</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.MipStatusEntry"><span class="badge">M</span>MipStatusEntry</a>
+                </li>
+              
+              
+                <li>
+                  <a href="#massa.model.v1.ComponentStateId"><span class="badge">E</span>ComponentStateId</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.MipComponent"><span class="badge">E</span>MipComponent</a>
+                </li>
+              
+              
+              
+            </ul>
+          </li>
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2fstats.proto">massa/model/v1/stats.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.ConsensusStats"><span class="badge">M</span>ConsensusStats</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.ExecutionStats"><span class="badge">M</span>ExecutionStats</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.NetworkStats"><span class="badge">M</span>NetworkStats</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.PoolStats"><span class="badge">M</span>PoolStats</a>
+                </li>
+              
+              
+              
+              
+            </ul>
+          </li>
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2fnode.proto">massa/model/v1/node.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.CompactConfig"><span class="badge">M</span>CompactConfig</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.ConnectedNode"><span class="badge">M</span>ConnectedNode</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.NodeStatus"><span class="badge">M</span>NodeStatus</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.PublicStatus"><span class="badge">M</span>PublicStatus</a>
+                </li>
+              
+              
+                <li>
+                  <a href="#massa.model.v1.ConnectionType"><span class="badge">E</span>ConnectionType</a>
+                </li>
+              
+              
+              
+            </ul>
+          </li>
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2foperation.proto">massa/model/v1/operation.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.CallSC"><span class="badge">M</span>CallSC</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.ExecuteSC"><span class="badge">M</span>ExecuteSC</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.OpTypes"><span class="badge">M</span>OpTypes</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.Operation"><span class="badge">M</span>Operation</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.OperationIds"><span class="badge">M</span>OperationIds</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.OperationInfo"><span class="badge">M</span>OperationInfo</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.OperationType"><span class="badge">M</span>OperationType</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.OperationTypeRoll"><span class="badge">M</span>OperationTypeRoll</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.OperationWrapper"><span class="badge">M</span>OperationWrapper</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.RollBuy"><span class="badge">M</span>RollBuy</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.RollSell"><span class="badge">M</span>RollSell</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.SignedOperation"><span class="badge">M</span>SignedOperation</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.Transaction"><span class="badge">M</span>Transaction</a>
+                </li>
+              
+              
+                <li>
+                  <a href="#massa.model.v1.OpType"><span class="badge">E</span>OpType</a>
+                </li>
+              
+              
+              
+            </ul>
+          </li>
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2fdenunciation.proto">massa/model/v1/denunciation.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.BlockHeaderDenunciation"><span class="badge">M</span>BlockHeaderDenunciation</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.Denunciation"><span class="badge">M</span>Denunciation</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.DenunciationAddress"><span class="badge">M</span>DenunciationAddress</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.DenunciationBlockHeader"><span class="badge">M</span>DenunciationBlockHeader</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.DenunciationEndorsement"><span class="badge">M</span>DenunciationEndorsement</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.DenunciationIndex"><span class="badge">M</span>DenunciationIndex</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.EndorsementDenunciation"><span class="badge">M</span>EndorsementDenunciation</a>
+                </li>
+              
+              
+              
+              
+            </ul>
+          </li>
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2fcommons.proto">massa/model/v1/commons.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.ArrayOfBytesWrapper"><span class="badge">M</span>ArrayOfBytesWrapper</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.BytesMapFieldEntry"><span class="badge">M</span>BytesMapFieldEntry</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.Empty"><span class="badge">M</span>Empty</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.Error"><span class="badge">M</span>Error</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.KeyPair"><span class="badge">M</span>KeyPair</a>
+                </li>
+              
+              
+                <li>
+                  <a href="#massa.model.v1.ComparisonResult"><span class="badge">E</span>ComparisonResult</a>
+                </li>
+              
+              
+              
+            </ul>
+          </li>
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2famount.proto">massa/model/v1/amount.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.NativeAmount"><span class="badge">M</span>NativeAmount</a>
+                </li>
+              
+              
+              
+              
+            </ul>
+          </li>
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2fexecution.proto">massa/model/v1/execution.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.AsyncMessage"><span class="badge">M</span>AsyncMessage</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.AsyncMessageExecution"><span class="badge">M</span>AsyncMessageExecution</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.AsyncMessageTrigger"><span class="badge">M</span>AsyncMessageTrigger</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.AsyncMessageUpdate"><span class="badge">M</span>AsyncMessageUpdate</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.AsyncPoolChangeEntry"><span class="badge">M</span>AsyncPoolChangeEntry</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.AsyncPoolChangeValue"><span class="badge">M</span>AsyncPoolChangeValue</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.BytecodeExecution"><span class="badge">M</span>BytecodeExecution</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.DeferredCallExecution"><span class="badge">M</span>DeferredCallExecution</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.ExecTransferInfo"><span class="badge">M</span>ExecTransferInfo</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.ExecutedOpsChangeEntry"><span class="badge">M</span>ExecutedOpsChangeEntry</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.ExecutedOpsChangeValue"><span class="badge">M</span>ExecutedOpsChangeValue</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.ExecutionOutput"><span class="badge">M</span>ExecutionOutput</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.ExecutionStackElement"><span class="badge">M</span>ExecutionStackElement</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.FinalizedExecutionOutput"><span class="badge">M</span>FinalizedExecutionOutput</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.FunctionCall"><span class="badge">M</span>FunctionCall</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.LedgerChangeEntry"><span class="badge">M</span>LedgerChangeEntry</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.LedgerChangeValue"><span class="badge">M</span>LedgerChangeValue</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.LedgerEntry"><span class="badge">M</span>LedgerEntry</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.LedgerEntryUpdate"><span class="badge">M</span>LedgerEntryUpdate</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.ReadOnlyExecutionCall"><span class="badge">M</span>ReadOnlyExecutionCall</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.ReadOnlyExecutionOutput"><span class="badge">M</span>ReadOnlyExecutionOutput</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.ScExecutionEvent"><span class="badge">M</span>ScExecutionEvent</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.ScExecutionEventContext"><span class="badge">M</span>ScExecutionEventContext</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.ScExecutionEventsStatus"><span class="badge">M</span>ScExecutionEventsStatus</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.SetOrDeleteDatastoreEntry"><span class="badge">M</span>SetOrDeleteDatastoreEntry</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.SetOrKeepAsyncMessageTrigger"><span class="badge">M</span>SetOrKeepAsyncMessageTrigger</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.SetOrKeepBalance"><span class="badge">M</span>SetOrKeepBalance</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.SetOrKeepBool"><span class="badge">M</span>SetOrKeepBool</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.SetOrKeepBytes"><span class="badge">M</span>SetOrKeepBytes</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.SetOrKeepSlot"><span class="badge">M</span>SetOrKeepSlot</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.SetOrKeepString"><span class="badge">M</span>SetOrKeepString</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.SetOrKeepUint64"><span class="badge">M</span>SetOrKeepUint64</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.SlotExecutionOutput"><span class="badge">M</span>SlotExecutionOutput</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.StateChanges"><span class="badge">M</span>StateChanges</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.TargetAmount"><span class="badge">M</span>TargetAmount</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.TransferValue"><span class="badge">M</span>TransferValue</a>
+                </li>
+              
+              
+                <li>
+                  <a href="#massa.model.v1.AsyncPoolChangeType"><span class="badge">E</span>AsyncPoolChangeType</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.CoinOrigin"><span class="badge">E</span>CoinOrigin</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.ExecutionOutputStatus"><span class="badge">E</span>ExecutionOutputStatus</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.LedgerChangeType"><span class="badge">E</span>LedgerChangeType</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.OperationExecutionStatus"><span class="badge">E</span>OperationExecutionStatus</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.ScExecutionEventStatus"><span class="badge">E</span>ScExecutionEventStatus</a>
+                </li>
+              
+              
+              
+            </ul>
+          </li>
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2fslot.proto">massa/model/v1/slot.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.IndexedSlot"><span class="badge">M</span>IndexedSlot</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.Slot"><span class="badge">M</span>Slot</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.SlotRange"><span class="badge">M</span>SlotRange</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.Slots"><span class="badge">M</span>Slots</a>
+                </li>
+              
+              
+              
+              
+            </ul>
+          </li>
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2faddress.proto">massa/model/v1/address.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.Addresses"><span class="badge">M</span>Addresses</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.NativeAddress"><span class="badge">M</span>NativeAddress</a>
+                </li>
+              
+              
+                <li>
+                  <a href="#massa.model.v1.AddressCategory"><span class="badge">E</span>AddressCategory</a>
+                </li>
+              
+              
+              
+            </ul>
+          </li>
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2fblock.proto">massa/model/v1/block.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.Block"><span class="badge">M</span>Block</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.BlockHeader"><span class="badge">M</span>BlockHeader</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.BlockIds"><span class="badge">M</span>BlockIds</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.BlockInfo"><span class="badge">M</span>BlockInfo</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.BlockParent"><span class="badge">M</span>BlockParent</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.BlockWrapper"><span class="badge">M</span>BlockWrapper</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.FilledBlock"><span class="badge">M</span>FilledBlock</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.FilledOperationEntry"><span class="badge">M</span>FilledOperationEntry</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.SignedBlock"><span class="badge">M</span>SignedBlock</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.SignedBlockHeader"><span class="badge">M</span>SignedBlockHeader</a>
+                </li>
+              
+              
+                <li>
+                  <a href="#massa.model.v1.BlockStatus"><span class="badge">E</span>BlockStatus</a>
+                </li>
+              
+              
+              
+            </ul>
+          </li>
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2fendorsement.proto">massa/model/v1/endorsement.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.Endorsement"><span class="badge">M</span>Endorsement</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.EndorsementIds"><span class="badge">M</span>EndorsementIds</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.EndorsementInfo"><span class="badge">M</span>EndorsementInfo</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.EndorsementWrapper"><span class="badge">M</span>EndorsementWrapper</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.model.v1.SignedEndorsement"><span class="badge">M</span>SignedEndorsement</a>
+                </li>
+              
+              
+              
+              
+            </ul>
+          </li>
+        
+          
+          <li>
+            <a href="#massa%2fmodel%2fv1%2ftime.proto">massa/model/v1/time.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.model.v1.NativeTime"><span class="badge">M</span>NativeTime</a>
+                </li>
+              
+              
+              
+              
+            </ul>
+          </li>
+        
+        <li><a href="#scalar-value-types">Scalar Value Types</a></li>
+      </ul>
+    </div>
+
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/datastore.proto">massa/model/v1/datastore.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.AddressKeyEntry">AddressKeyEntry</h3>
+        <p>AddressKeyEntry</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Associated address of the entry </p></td>
+                </tr>
+              
+                <tr>
+                  <td>key</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Datastore key </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.AddressKeysEntries">AddressKeysEntries</h3>
+        <p>AddressKeys holds a list of addresses - keys</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>address_key_entries</td>
+                  <td><a href="#massa.model.v1.AddressKeyEntry">AddressKeyEntry</a></td>
+                  <td>repeated</td>
+                  <td><p>List of address- key entries </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.DatastoreEntry">DatastoreEntry</h3>
+        <p>DatastoreEntry</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>final_value</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>final datastore entry value </p></td>
+                </tr>
+              
+                <tr>
+                  <td>candidate_value</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>candidate_value datastore entry value </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+
+      
+
+      
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/staker.proto">massa/model/v1/staker.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.StakerEntry">StakerEntry</h3>
+        <p>StakerEntry</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Address </p></td>
+                </tr>
+              
+                <tr>
+                  <td>rolls</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Rolls </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+
+      
+
+      
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/draw.proto">massa/model/v1/draw.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.EndorsementDraw">EndorsementDraw</h3>
+        <p>Endorsement draw</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>index</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Endorsement index </p></td>
+                </tr>
+              
+                <tr>
+                  <td>producer</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Producer address </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.SlotDraw">SlotDraw</h3>
+        <p>Slot draw</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Slot </p></td>
+                </tr>
+              
+                <tr>
+                  <td>block_producer</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td></td>
+                  <td><p>Block producer address (Optional) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>endorsement_draws</td>
+                  <td><a href="#massa.model.v1.EndorsementDraw">EndorsementDraw</a></td>
+                  <td>repeated</td>
+                  <td><p>Endorsement draws </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+
+      
+
+      
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/versioning.proto">massa/model/v1/versioning.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.MipComponentEntry">MipComponentEntry</h3>
+        <p>MipComponentEntry</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>kind</td>
+                  <td><a href="#massa.model.v1.MipComponent">MipComponent</a></td>
+                  <td></td>
+                  <td><p>Kind </p></td>
+                </tr>
+              
+                <tr>
+                  <td>version</td>
+                  <td><a href="#uint32">uint32</a></td>
+                  <td></td>
+                  <td><p>Version </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.MipInfo">MipInfo</h3>
+        <p>MIP info (name & versions & time range for a MIP)</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>name</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>MIP name or descriptive name </p></td>
+                </tr>
+              
+                <tr>
+                  <td>version</td>
+                  <td><a href="#uint32">uint32</a></td>
+                  <td></td>
+                  <td><p>Network (or global) version (to be included in block header) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>start</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>A timestamp at which the version gains its meaning (e.g. announced in block header) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>timeout</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>A timestamp at the which the deployment is considered failed </p></td>
+                </tr>
+              
+                <tr>
+                  <td>activation_delay</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>Once deployment has been locked, wait for this duration before deployment is considered active </p></td>
+                </tr>
+              
+                <tr>
+                  <td>components</td>
+                  <td><a href="#massa.model.v1.MipComponentEntry">MipComponentEntry</a></td>
+                  <td>repeated</td>
+                  <td><p>Components concerned by this versioning (e.g. a new Block version), and the associated component_version </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.MipStatusEntry">MipStatusEntry</h3>
+        <p>Entry for GetMipStatusResponse</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>mip_info</td>
+                  <td><a href="#massa.model.v1.MipInfo">MipInfo</a></td>
+                  <td></td>
+                  <td><p>Mip info </p></td>
+                </tr>
+              
+                <tr>
+                  <td>state_id</td>
+                  <td><a href="#massa.model.v1.ComponentStateId">ComponentStateId</a></td>
+                  <td></td>
+                  <td><p>State id </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+        <h3 id="massa.model.v1.ComponentStateId">ComponentStateId</h3>
+        <p>State machine for a Versioning component that tracks the deployment state</p>
+        <table class="enum-table">
+          <thead>
+            <tr><td>Name</td><td>Number</td><td>Description</td></tr>
+          </thead>
+          <tbody>
+            
+              <tr>
+                <td>COMPONENT_STATE_ID_UNSPECIFIED</td>
+                <td>0</td>
+                <td><p>Default enum value</p></td>
+              </tr>
+            
+              <tr>
+                <td>COMPONENT_STATE_ID_ERROR</td>
+                <td>1</td>
+                <td><p>Error state</p></td>
+              </tr>
+            
+              <tr>
+                <td>COMPONENT_STATE_ID_DEFINED</td>
+                <td>2</td>
+                <td><p>Initial state</p></td>
+              </tr>
+            
+              <tr>
+                <td>COMPONENT_STATE_ID_STARTED</td>
+                <td>3</td>
+                <td><p>Past start, can only go to LockedIn after the threshold is above a given value</p></td>
+              </tr>
+            
+              <tr>
+                <td>COMPONENT_STATE_ID_LOCKEDIN</td>
+                <td>4</td>
+                <td><p>Locked but wait for some time before going to active (to let users the time to upgrade)</p></td>
+              </tr>
+            
+              <tr>
+                <td>COMPONENT_STATE_ID_ACTIVE</td>
+                <td>5</td>
+                <td><p>After LockedIn, deployment is considered successful (after activation delay)</p></td>
+              </tr>
+            
+              <tr>
+                <td>COMPONENT_STATE_ID_FAILED</td>
+                <td>6</td>
+                <td><p>Past the timeout, if LockedIn is not reach</p></td>
+              </tr>
+            
+          </tbody>
+        </table>
+      
+        <h3 id="massa.model.v1.MipComponent">MipComponent</h3>
+        <p>Versioning component enum</p>
+        <table class="enum-table">
+          <thead>
+            <tr><td>Name</td><td>Number</td><td>Description</td></tr>
+          </thead>
+          <tbody>
+            
+              <tr>
+                <td>MIP_COMPONENT_UNSPECIFIED</td>
+                <td>0</td>
+                <td><p>Default enum value</p></td>
+              </tr>
+            
+              <tr>
+                <td>MIP_COMPONENT_ADDRESS</td>
+                <td>1</td>
+                <td><p>Address component</p></td>
+              </tr>
+            
+              <tr>
+                <td>MIP_COMPONENT_KEYPAIR</td>
+                <td>2</td>
+                <td><p>Keypair component</p></td>
+              </tr>
+            
+          </tbody>
+        </table>
+      
+
+      
+
+      
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/stats.proto">massa/model/v1/stats.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.ConsensusStats">ConsensusStats</h3>
+        <p>Consensus statistics</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>start_timespan</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>Start of the time span for stats </p></td>
+                </tr>
+              
+                <tr>
+                  <td>end_timespan</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>End of the time span for stats </p></td>
+                </tr>
+              
+                <tr>
+                  <td>final_block_count</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Number of final blocks </p></td>
+                </tr>
+              
+                <tr>
+                  <td>stale_block_count</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Number of stale blocks in memory </p></td>
+                </tr>
+              
+                <tr>
+                  <td>clique_count</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Number of actives cliques </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.ExecutionStats">ExecutionStats</h3>
+        <p>Execution statistics</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>time_window_start</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>Time window start </p></td>
+                </tr>
+              
+                <tr>
+                  <td>time_window_end</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>Time window end </p></td>
+                </tr>
+              
+                <tr>
+                  <td>final_block_count</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Number of final blocks in the time window </p></td>
+                </tr>
+              
+                <tr>
+                  <td>final_executed_operations_count</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Number of final executed operations in the time window </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.NetworkStats">NetworkStats</h3>
+        <p>Network statistics</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>in_connection_count</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>In connections count </p></td>
+                </tr>
+              
+                <tr>
+                  <td>out_connection_count</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Out connections count </p></td>
+                </tr>
+              
+                <tr>
+                  <td>known_peer_count</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Total known peers count </p></td>
+                </tr>
+              
+                <tr>
+                  <td>banned_peer_count</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Banned node count </p></td>
+                </tr>
+              
+                <tr>
+                  <td>active_node_count</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Active node count </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.PoolStats">PoolStats</h3>
+        <p>Pool statistics</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>endorsements_count</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Endorsements </p></td>
+                </tr>
+              
+                <tr>
+                  <td>operations_count</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Operations </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+
+      
+
+      
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/node.proto">massa/model/v1/node.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.CompactConfig">CompactConfig</h3>
+        <p>Compact configuration</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>genesis_timestamp</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>Time in milliseconds when the blockclique started. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>end_timestamp</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>TESTNET: time when the blockclique is ended. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>thread_count</td>
+                  <td><a href="#uint32">uint32</a></td>
+                  <td></td>
+                  <td><p>Number of threads </p></td>
+                </tr>
+              
+                <tr>
+                  <td>t0</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>Time between the periods in the same thread. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>delta_f0</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Threshold for fitness. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>operation_validity_periods</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Maximum operation validity period count </p></td>
+                </tr>
+              
+                <tr>
+                  <td>periods_per_cycle</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>cycle duration in periods </p></td>
+                </tr>
+              
+                <tr>
+                  <td>block_reward</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Reward amount for a block creation </p></td>
+                </tr>
+              
+                <tr>
+                  <td>roll_price</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Price of a roll on the network </p></td>
+                </tr>
+              
+                <tr>
+                  <td>max_block_size</td>
+                  <td><a href="#uint32">uint32</a></td>
+                  <td></td>
+                  <td><p>Max total size of a block </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.ConnectedNode">ConnectedNode</h3>
+        <p>Connected node</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>node_id</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Node id </p></td>
+                </tr>
+              
+                <tr>
+                  <td>node_ip</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Node ip </p></td>
+                </tr>
+              
+                <tr>
+                  <td>connection_type</td>
+                  <td><a href="#massa.model.v1.ConnectionType">ConnectionType</a></td>
+                  <td></td>
+                  <td><p>Connection type </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.NodeStatus">NodeStatus</h3>
+        <p>Node status</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>node_id</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Our node id </p></td>
+                </tr>
+              
+                <tr>
+                  <td>node_ip</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Optional node ip </p></td>
+                </tr>
+              
+                <tr>
+                  <td>version</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Node version </p></td>
+                </tr>
+              
+                <tr>
+                  <td>current_time</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>Now </p></td>
+                </tr>
+              
+                <tr>
+                  <td>current_cycle</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Current cycle </p></td>
+                </tr>
+              
+                <tr>
+                  <td>current_cycle_time</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>Current cycle starting timestamp </p></td>
+                </tr>
+              
+                <tr>
+                  <td>next_cycle_time</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>Next cycle starting timestamp </p></td>
+                </tr>
+              
+                <tr>
+                  <td>connected_nodes</td>
+                  <td><a href="#massa.model.v1.ConnectedNode">ConnectedNode</a></td>
+                  <td>repeated</td>
+                  <td><p>Connected nodes </p></td>
+                </tr>
+              
+                <tr>
+                  <td>last_executed_final_slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Last executed final slot </p></td>
+                </tr>
+              
+                <tr>
+                  <td>last_executed_speculative_slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Last executed speculative slot </p></td>
+                </tr>
+              
+                <tr>
+                  <td>final_state_fingerprint</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>The hash of the XOF final state hash </p></td>
+                </tr>
+              
+                <tr>
+                  <td>consensus_stats</td>
+                  <td><a href="#massa.model.v1.ConsensusStats">ConsensusStats</a></td>
+                  <td></td>
+                  <td><p>Consensus stats </p></td>
+                </tr>
+              
+                <tr>
+                  <td>pool_stats</td>
+                  <td><a href="#massa.model.v1.PoolStats">PoolStats</a></td>
+                  <td></td>
+                  <td><p>Pool stats (operation count and endorsement count) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>network_stats</td>
+                  <td><a href="#massa.model.v1.NetworkStats">NetworkStats</a></td>
+                  <td></td>
+                  <td><p>Network stats </p></td>
+                </tr>
+              
+                <tr>
+                  <td>execution_stats</td>
+                  <td><a href="#massa.model.v1.ExecutionStats">ExecutionStats</a></td>
+                  <td></td>
+                  <td><p>Execution stats </p></td>
+                </tr>
+              
+                <tr>
+                  <td>config</td>
+                  <td><a href="#massa.model.v1.CompactConfig">CompactConfig</a></td>
+                  <td></td>
+                  <td><p>Compact configuration </p></td>
+                </tr>
+              
+                <tr>
+                  <td>chain_id</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Chain id </p></td>
+                </tr>
+              
+                <tr>
+                  <td>current_mip_version</td>
+                  <td><a href="#uint32">uint32</a></td>
+                  <td></td>
+                  <td><p>Current mip version </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.PublicStatus">PublicStatus</h3>
+        <p>Public status</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>node_id</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Our node id </p></td>
+                </tr>
+              
+                <tr>
+                  <td>version</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Node version </p></td>
+                </tr>
+              
+                <tr>
+                  <td>current_time</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>Now </p></td>
+                </tr>
+              
+                <tr>
+                  <td>current_cycle</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Current cycle </p></td>
+                </tr>
+              
+                <tr>
+                  <td>current_cycle_time</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>Current cycle starting timestamp </p></td>
+                </tr>
+              
+                <tr>
+                  <td>next_cycle_time</td>
+                  <td><a href="#massa.model.v1.NativeTime">NativeTime</a></td>
+                  <td></td>
+                  <td><p>Next cycle starting timestamp </p></td>
+                </tr>
+              
+                <tr>
+                  <td>last_executed_final_slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Last executed final slot </p></td>
+                </tr>
+              
+                <tr>
+                  <td>last_executed_speculative_slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Last executed speculative slot </p></td>
+                </tr>
+              
+                <tr>
+                  <td>final_state_fingerprint</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>The hash of the XOF final state hash </p></td>
+                </tr>
+              
+                <tr>
+                  <td>config</td>
+                  <td><a href="#massa.model.v1.CompactConfig">CompactConfig</a></td>
+                  <td></td>
+                  <td><p>Compact configuration </p></td>
+                </tr>
+              
+                <tr>
+                  <td>chain_id</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Chain id </p></td>
+                </tr>
+              
+                <tr>
+                  <td>minimal_fees</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p>minimal fees </p></td>
+                </tr>
+              
+                <tr>
+                  <td>current_mip_version</td>
+                  <td><a href="#uint32">uint32</a></td>
+                  <td></td>
+                  <td><p>current mip version </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+        <h3 id="massa.model.v1.ConnectionType">ConnectionType</h3>
+        <p>ConnectionType enum</p>
+        <table class="enum-table">
+          <thead>
+            <tr><td>Name</td><td>Number</td><td>Description</td></tr>
+          </thead>
+          <tbody>
+            
+              <tr>
+                <td>CONNECTION_TYPE_UNSPECIFIED</td>
+                <td>0</td>
+                <td><p>Default enum value</p></td>
+              </tr>
+            
+              <tr>
+                <td>CONNECTION_TYPE_INCOMING</td>
+                <td>1</td>
+                <td><p>Incoming connection</p></td>
+              </tr>
+            
+              <tr>
+                <td>CONNECTION_TYPE_OUTGOING</td>
+                <td>2</td>
+                <td><p>Outgoing connection</p></td>
+              </tr>
+            
+          </tbody>
+        </table>
+      
+
+      
+
+      
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/operation.proto">massa/model/v1/operation.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.CallSC">CallSC</h3>
+        <p>Calls an exported function from a stored smart contract</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>target_address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Target smart contract address </p></td>
+                </tr>
+              
+                <tr>
+                  <td>target_function</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Target function name. No function is called if empty </p></td>
+                </tr>
+              
+                <tr>
+                  <td>parameter</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Parameter to pass to the target function </p></td>
+                </tr>
+              
+                <tr>
+                  <td>max_gas</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>The maximum amount of gas that the execution of the contract is allowed to
+cost </p></td>
+                </tr>
+              
+                <tr>
+                  <td>coins</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Extra coins that are spent from the caller&#39;s balance and transferred to the
+target </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.ExecuteSC">ExecuteSC</h3>
+        <p>Execute a smart contract</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>data</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Smart contract bytecode. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>max_coins</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>The maximum of coins that could be spent by the operation sender </p></td>
+                </tr>
+              
+                <tr>
+                  <td>max_gas</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>The maximum amount of gas that the execution of the contract is allowed to
+cost </p></td>
+                </tr>
+              
+                <tr>
+                  <td>datastore</td>
+                  <td><a href="#massa.model.v1.BytesMapFieldEntry">BytesMapFieldEntry</a></td>
+                  <td>repeated</td>
+                  <td><p>A key-value store associating a hash to arbitrary bytes </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.OpTypes">OpTypes</h3>
+        <p>OpTypes</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>op_types</td>
+                  <td><a href="#massa.model.v1.OpType">OpType</a></td>
+                  <td>repeated</td>
+                  <td><p>Operations types </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.Operation">Operation</h3>
+        <p>The operation as sent in the network</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>fee</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p>The fee they have decided for this operation </p></td>
+                </tr>
+              
+                <tr>
+                  <td>expire_period</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>After `expire_period` slot the operation won&#39;t be included in a block </p></td>
+                </tr>
+              
+                <tr>
+                  <td>op</td>
+                  <td><a href="#massa.model.v1.OperationType">OperationType</a></td>
+                  <td></td>
+                  <td><p>The type specific operation part </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.OperationIds">OperationIds</h3>
+        <p>OperationIds</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>operation_ids</td>
+                  <td><a href="#string">string</a></td>
+                  <td>repeated</td>
+                  <td><p>Operations ids </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.OperationInfo">OperationInfo</h3>
+        <p>Information about an operation with its metadata</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>id</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>The unique ID of the operation. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>block_ids</td>
+                  <td><a href="#string">string</a></td>
+                  <td>repeated</td>
+                  <td><p>The IDs of the blocks in which the operation appears </p></td>
+                </tr>
+              
+                <tr>
+                  <td>thread</td>
+                  <td><a href="#uint32">uint32</a></td>
+                  <td></td>
+                  <td><p>The thread in which the operation can be included </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.OperationType">OperationType</h3>
+        <p>Type specific operation content</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>transaction</td>
+                  <td><a href="#massa.model.v1.Transaction">Transaction</a></td>
+                  <td></td>
+                  <td><p>Transfer coins from sender to recipient </p></td>
+                </tr>
+              
+                <tr>
+                  <td>roll_buy</td>
+                  <td><a href="#massa.model.v1.RollBuy">RollBuy</a></td>
+                  <td></td>
+                  <td><p>The sender buys `roll_count` rolls. Roll price is defined in
+configuration </p></td>
+                </tr>
+              
+                <tr>
+                  <td>roll_sell</td>
+                  <td><a href="#massa.model.v1.RollSell">RollSell</a></td>
+                  <td></td>
+                  <td><p>The sender sells `roll_count` rolls. Roll price is defined in
+configuration </p></td>
+                </tr>
+              
+                <tr>
+                  <td>execute_sc</td>
+                  <td><a href="#massa.model.v1.ExecuteSC">ExecuteSC</a></td>
+                  <td></td>
+                  <td><p>Execute a smart contract </p></td>
+                </tr>
+              
+                <tr>
+                  <td>call_sc</td>
+                  <td><a href="#massa.model.v1.CallSC">CallSC</a></td>
+                  <td></td>
+                  <td><p>Calls an exported function from a stored smart contract </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.OperationTypeRoll">OperationTypeRoll</h3>
+        <p></p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>roll_buy</td>
+                  <td><a href="#massa.model.v1.RollBuy">RollBuy</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>roll_sell</td>
+                  <td><a href="#massa.model.v1.RollSell">RollSell</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.OperationWrapper">OperationWrapper</h3>
+        <p>A wrapper around an operation with its metadata</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>block_ids</td>
+                  <td><a href="#string">string</a></td>
+                  <td>repeated</td>
+                  <td><p>The IDs of the blocks in which the operation appears </p></td>
+                </tr>
+              
+                <tr>
+                  <td>thread</td>
+                  <td><a href="#uint32">uint32</a></td>
+                  <td></td>
+                  <td><p>The thread in which the operation can be included </p></td>
+                </tr>
+              
+                <tr>
+                  <td>operation</td>
+                  <td><a href="#massa.model.v1.SignedOperation">SignedOperation</a></td>
+                  <td></td>
+                  <td><p>The operation object itself </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.RollBuy">RollBuy</h3>
+        <p>The sender buys `roll_count` rolls. Roll price is defined in configuration</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>roll_count</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Roll count </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.RollSell">RollSell</h3>
+        <p>The sender sells `roll_count` rolls. Roll price is defined in configuration</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>roll_count</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Roll count </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.SignedOperation">SignedOperation</h3>
+        <p>Signed operation</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>content</td>
+                  <td><a href="#massa.model.v1.Operation">Operation</a></td>
+                  <td></td>
+                  <td><p>Operation </p></td>
+                </tr>
+              
+                <tr>
+                  <td>signature</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>A cryptographically generated value using `serialized_data` and a public
+key. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>content_creator_pub_key</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>The public-key component used in the generation of the signature </p></td>
+                </tr>
+              
+                <tr>
+                  <td>content_creator_address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Derived from the same public key used to generate the signature </p></td>
+                </tr>
+              
+                <tr>
+                  <td>secure_hash</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>A secure hash of the non-malleable contents of a deterministic binary
+representation of the block header </p></td>
+                </tr>
+              
+                <tr>
+                  <td>serialized_size</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>The size of the serialized operation in bytes </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.Transaction">Transaction</h3>
+        <p>Transfer coins from sender to recipient</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>recipient_address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Recipient address </p></td>
+                </tr>
+              
+                <tr>
+                  <td>amount</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Amount </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+        <h3 id="massa.model.v1.OpType">OpType</h3>
+        <p>Operation type enum</p>
+        <table class="enum-table">
+          <thead>
+            <tr><td>Name</td><td>Number</td><td>Description</td></tr>
+          </thead>
+          <tbody>
+            
+              <tr>
+                <td>OP_TYPE_UNSPECIFIED</td>
+                <td>0</td>
+                <td><p>Default enum value</p></td>
+              </tr>
+            
+              <tr>
+                <td>OP_TYPE_TRANSACTION</td>
+                <td>1</td>
+                <td><p>Transaction</p></td>
+              </tr>
+            
+              <tr>
+                <td>OP_TYPE_ROLL_BUY</td>
+                <td>2</td>
+                <td><p>Roll buy</p></td>
+              </tr>
+            
+              <tr>
+                <td>OP_TYPE_ROLL_SELL</td>
+                <td>3</td>
+                <td><p>Roll sell</p></td>
+              </tr>
+            
+              <tr>
+                <td>OP_TYPE_EXECUTE_SC</td>
+                <td>4</td>
+                <td><p>Execute smart contract</p></td>
+              </tr>
+            
+              <tr>
+                <td>OP_TYPE_CALL_SC</td>
+                <td>5</td>
+                <td><p>Call smart contract</p></td>
+              </tr>
+            
+          </tbody>
+        </table>
+      
+
+      
+
+      
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/denunciation.proto">massa/model/v1/denunciation.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.BlockHeaderDenunciation">BlockHeaderDenunciation</h3>
+        <p></p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>public_key</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Denunciation public key </p></td>
+                </tr>
+              
+                <tr>
+                  <td>slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Denunciation slot </p></td>
+                </tr>
+              
+                <tr>
+                  <td>hash_1</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Denunciation hash 1 </p></td>
+                </tr>
+              
+                <tr>
+                  <td>hash_2</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Denunciation hash 2 </p></td>
+                </tr>
+              
+                <tr>
+                  <td>signature_1</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Denunciation sig 1 </p></td>
+                </tr>
+              
+                <tr>
+                  <td>signature_2</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Denunciation sig 2 </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.Denunciation">Denunciation</h3>
+        <p></p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>block_header</td>
+                  <td><a href="#massa.model.v1.BlockHeaderDenunciation">BlockHeaderDenunciation</a></td>
+                  <td></td>
+                  <td><p>Denunciation block header </p></td>
+                </tr>
+              
+                <tr>
+                  <td>endorsement</td>
+                  <td><a href="#massa.model.v1.EndorsementDenunciation">EndorsementDenunciation</a></td>
+                  <td></td>
+                  <td><p>Denunciation endorsement </p></td>
+                </tr>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#massa.model.v1.DenunciationAddress">DenunciationAddress</a></td>
+                  <td></td>
+                  <td><p>Denunciation address </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.DenunciationAddress">DenunciationAddress</h3>
+        <p></p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>address_denounced</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>target address </p></td>
+                </tr>
+              
+                <tr>
+                  <td>slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>slot </p></td>
+                </tr>
+              
+                <tr>
+                  <td>slashed</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p>amount slashed </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.DenunciationBlockHeader">DenunciationBlockHeader</h3>
+        <p>Variant for Block header denunciation index</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Denunciation slot </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.DenunciationEndorsement">DenunciationEndorsement</h3>
+        <p>Variant for Endorsement denunciation index</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Denounciation slot </p></td>
+                </tr>
+              
+                <tr>
+                  <td>index</td>
+                  <td><a href="#uint32">uint32</a></td>
+                  <td></td>
+                  <td><p>Denounciation index </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.DenunciationIndex">DenunciationIndex</h3>
+        <p>Index for Denunciations in collections (e.g. like a HashMap...)</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>block_header</td>
+                  <td><a href="#massa.model.v1.DenunciationBlockHeader">DenunciationBlockHeader</a></td>
+                  <td></td>
+                  <td><p>Denunciation block header </p></td>
+                </tr>
+              
+                <tr>
+                  <td>endorsement</td>
+                  <td><a href="#massa.model.v1.DenunciationEndorsement">DenunciationEndorsement</a></td>
+                  <td></td>
+                  <td><p>Denunciation endorsement </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.EndorsementDenunciation">EndorsementDenunciation</h3>
+        <p></p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>public_key</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Denunciation public key </p></td>
+                </tr>
+              
+                <tr>
+                  <td>slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Denunciation slot </p></td>
+                </tr>
+              
+                <tr>
+                  <td>index</td>
+                  <td><a href="#uint32">uint32</a></td>
+                  <td></td>
+                  <td><p>Denunciation index </p></td>
+                </tr>
+              
+                <tr>
+                  <td>hash_1</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Denunciation hash 1 </p></td>
+                </tr>
+              
+                <tr>
+                  <td>hash_2</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Denunciation hash 2 </p></td>
+                </tr>
+              
+                <tr>
+                  <td>signature_1</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Denunciation sig 1 </p></td>
+                </tr>
+              
+                <tr>
+                  <td>signature_2</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Denunciation sig 2 </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+
+      
+
+      
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/commons.proto">massa/model/v1/commons.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.ArrayOfBytesWrapper">ArrayOfBytesWrapper</h3>
+        <p>Array of bytes wrapper</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>items</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td>repeated</td>
+                  <td><p>Repeated bytes </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.BytesMapFieldEntry">BytesMapFieldEntry</h3>
+        <p>BytesMapFieldEntry</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>key</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>bytes key </p></td>
+                </tr>
+              
+                <tr>
+                  <td>value</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>bytes key </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.Empty">Empty</h3>
+        <p>Empty</p>
+
+        
+
+        
+      
+        <h3 id="massa.model.v1.Error">Error</h3>
+        <p>Massa error</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>code</td>
+                  <td><a href="#int32">int32</a></td>
+                  <td></td>
+                  <td><p>The error code </p></td>
+                </tr>
+              
+                <tr>
+                  <td>message</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>A developer-facing error message, which should be in English </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.KeyPair">KeyPair</h3>
+        <p>KeyPair</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>public_key</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Public key </p></td>
+                </tr>
+              
+                <tr>
+                  <td>secret_key</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Secret key </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+        <h3 id="massa.model.v1.ComparisonResult">ComparisonResult</h3>
+        <p>Comparison result</p>
+        <table class="enum-table">
+          <thead>
+            <tr><td>Name</td><td>Number</td><td>Description</td></tr>
+          </thead>
+          <tbody>
+            
+              <tr>
+                <td>COMPARISON_RESULT_UNSPECIFIED</td>
+                <td>0</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COMPARISON_RESULT_LOWER</td>
+                <td>1</td>
+                <td><p>left is lower</p></td>
+              </tr>
+            
+              <tr>
+                <td>COMPARISON_RESULT_EQUAL</td>
+                <td>2</td>
+                <td><p>left and right are equal</p></td>
+              </tr>
+            
+              <tr>
+                <td>COMPARISON_RESULT_GREATER</td>
+                <td>3</td>
+                <td><p>left is greater</p></td>
+              </tr>
+            
+          </tbody>
+        </table>
+      
+
+      
+
+      
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/amount.proto">massa/model/v1/amount.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.NativeAmount">NativeAmount</h3>
+        <p>NativeAmount is represented as a fraction so precision can be adjusted in</p><p>the future. value = mantissa / (10^scale)</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>mantissa</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Mantissa </p></td>
+                </tr>
+              
+                <tr>
+                  <td>scale</td>
+                  <td><a href="#uint32">uint32</a></td>
+                  <td></td>
+                  <td><p>Scale </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+
+      
+
+      
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/execution.proto">massa/model/v1/execution.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.AsyncMessage">AsyncMessage</h3>
+        <p>Asynchronous smart contract message</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>emission_slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Slot at which the message was emitted </p></td>
+                </tr>
+              
+                <tr>
+                  <td>emission_index</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Index of the emitted message within the `emission_slot`.
+This is used for disambiguate the emission of multiple messages at the same
+slot. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>sender</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>The address that sent the message </p></td>
+                </tr>
+              
+                <tr>
+                  <td>destination</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>The address towards which the message is being sent </p></td>
+                </tr>
+              
+                <tr>
+                  <td>handler</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>the handler function name within the destination address&#39; bytecode </p></td>
+                </tr>
+              
+                <tr>
+                  <td>max_gas</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Maximum gas to use when processing the message </p></td>
+                </tr>
+              
+                <tr>
+                  <td>fee</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Fee paid by the sender when the message is processed. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>coins</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Coins sent from the sender to the target address of the message.
+Those coins are spent by the sender address when the message is sent,
+and credited to the destination address when receiving the message.
+In case of failure or discard, those coins are reimbursed to the sender. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>validity_start</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Slot at which the message starts being valid (bound included in the
+validity range) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>validity_end</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Slot at which the message stops being valid (bound not included in the
+validity range) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>data</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Raw payload data of the message </p></td>
+                </tr>
+              
+                <tr>
+                  <td>trigger</td>
+                  <td><a href="#massa.model.v1.AsyncMessageTrigger">AsyncMessageTrigger</a></td>
+                  <td></td>
+                  <td><p>Trigger that define whenever a message can be executed </p></td>
+                </tr>
+              
+                <tr>
+                  <td>can_be_executed</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>Boolean that determine if the message can be executed. For messages without
+filter this boolean is always true. For messages with filter, this boolean
+is true if the filter has been matched between `validity_start` and current
+slot. </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.AsyncMessageExecution">AsyncMessageExecution</h3>
+        <p></p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>success</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>sender</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>destination</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>coins</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.AsyncMessageTrigger">AsyncMessageTrigger</h3>
+        <p>Structure defining a trigger for an asynchronous message</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Filter on the address </p></td>
+                </tr>
+              
+                <tr>
+                  <td>datastore_key</td>
+                  <td><a href="#google.protobuf.BytesValue">google.protobuf.BytesValue</a></td>
+                  <td></td>
+                  <td><p>Filter on the datastore key (Optional) </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.AsyncMessageUpdate">AsyncMessageUpdate</h3>
+        <p>Asynchronous smart contract message</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>emission_slot</td>
+                  <td><a href="#massa.model.v1.SetOrKeepSlot">SetOrKeepSlot</a></td>
+                  <td></td>
+                  <td><p>Change the slot at which the message was emitted </p></td>
+                </tr>
+              
+                <tr>
+                  <td>emission_index</td>
+                  <td><a href="#massa.model.v1.SetOrKeepUint64">SetOrKeepUint64</a></td>
+                  <td></td>
+                  <td><p>Change the index of the emitted message within the `emission_slot`.
+This is used for disambiguate the emission of multiple messages at the same
+slot. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>sender</td>
+                  <td><a href="#massa.model.v1.SetOrKeepString">SetOrKeepString</a></td>
+                  <td></td>
+                  <td><p>Change the address that sent the message </p></td>
+                </tr>
+              
+                <tr>
+                  <td>destination</td>
+                  <td><a href="#massa.model.v1.SetOrKeepString">SetOrKeepString</a></td>
+                  <td></td>
+                  <td><p>Change the address towards which the message is being sent </p></td>
+                </tr>
+              
+                <tr>
+                  <td>handler</td>
+                  <td><a href="#massa.model.v1.SetOrKeepString">SetOrKeepString</a></td>
+                  <td></td>
+                  <td><p>Change the handler function name within the destination address&#39; bytecode </p></td>
+                </tr>
+              
+                <tr>
+                  <td>max_gas</td>
+                  <td><a href="#massa.model.v1.SetOrKeepUint64">SetOrKeepUint64</a></td>
+                  <td></td>
+                  <td><p>Change the maximum gas to use when processing the message </p></td>
+                </tr>
+              
+                <tr>
+                  <td>fee</td>
+                  <td><a href="#massa.model.v1.SetOrKeepUint64">SetOrKeepUint64</a></td>
+                  <td></td>
+                  <td><p>Change the fee paid by the sender when the message is processed. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>coins</td>
+                  <td><a href="#massa.model.v1.SetOrKeepUint64">SetOrKeepUint64</a></td>
+                  <td></td>
+                  <td><p>Change the coins sent from the sender to the target address of the message.
+Those coins are spent by the sender address when the message is sent,
+and credited to the destination address when receiving the message.
+In case of failure or discard, those coins are reimbursed to the sender. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>validity_start</td>
+                  <td><a href="#massa.model.v1.SetOrKeepSlot">SetOrKeepSlot</a></td>
+                  <td></td>
+                  <td><p>Change the slot at which the message starts being valid (bound included in
+the validity range) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>validity_end</td>
+                  <td><a href="#massa.model.v1.SetOrKeepSlot">SetOrKeepSlot</a></td>
+                  <td></td>
+                  <td><p>Change the slot at which the message stops being valid (bound not included
+in the validity range) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>data</td>
+                  <td><a href="#massa.model.v1.SetOrKeepBytes">SetOrKeepBytes</a></td>
+                  <td></td>
+                  <td><p>Change the raw payload data of the message </p></td>
+                </tr>
+              
+                <tr>
+                  <td>trigger</td>
+                  <td><a href="#massa.model.v1.SetOrKeepAsyncMessageTrigger">SetOrKeepAsyncMessageTrigger</a></td>
+                  <td></td>
+                  <td><p>Change the trigger that define whenever a message can be executed </p></td>
+                </tr>
+              
+                <tr>
+                  <td>can_be_executed</td>
+                  <td><a href="#massa.model.v1.SetOrKeepBool">SetOrKeepBool</a></td>
+                  <td></td>
+                  <td><p>Change the boolean that determine if the message can be executed. For
+messages without filter this boolean is always true. For messages with
+filter, this boolean is true if the filter has been matched between
+`validity_start` and current slot. </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.AsyncPoolChangeEntry">AsyncPoolChangeEntry</h3>
+        <p>AsyncPoolChange Entry</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>async_message_id</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Async message id </p></td>
+                </tr>
+              
+                <tr>
+                  <td>value</td>
+                  <td><a href="#massa.model.v1.AsyncPoolChangeValue">AsyncPoolChangeValue</a></td>
+                  <td></td>
+                  <td><p>AsyncPool message </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.AsyncPoolChangeValue">AsyncPoolChangeValue</h3>
+        <p>AsyncPoolChangeValue</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>type</td>
+                  <td><a href="#massa.model.v1.AsyncPoolChangeType">AsyncPoolChangeType</a></td>
+                  <td></td>
+                  <td><p>The type of the change </p></td>
+                </tr>
+              
+                <tr>
+                  <td>created_message</td>
+                  <td><a href="#massa.model.v1.AsyncMessage">AsyncMessage</a></td>
+                  <td></td>
+                  <td><p>Created ledger entry </p></td>
+                </tr>
+              
+                <tr>
+                  <td>updated_message</td>
+                  <td><a href="#massa.model.v1.AsyncMessageUpdate">AsyncMessageUpdate</a></td>
+                  <td></td>
+                  <td><p>Update ledger entry </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.BytecodeExecution">BytecodeExecution</h3>
+        <p>Execute a bytecode</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>bytecode</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Byte code </p></td>
+                </tr>
+              
+                <tr>
+                  <td>operation_datastore</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Serialized datastore (key value store)  for `ExecuteSC` Operation
+(Optional) </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.DeferredCallExecution">DeferredCallExecution</h3>
+        <p></p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>success</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>sender</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>target_address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>target_function</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>coins</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.ExecTransferInfo">ExecTransferInfo</h3>
+        <p></p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>id</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>from_address</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>to_address</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>value</td>
+                  <td><a href="#massa.model.v1.TransferValue">TransferValue</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>origin</td>
+                  <td><a href="#massa.model.v1.CoinOrigin">CoinOrigin</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>operation_id</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>async_msg_id</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>deferred_call_id</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>denunciation_index</td>
+                  <td><a href="#massa.model.v1.DenunciationIndex">DenunciationIndex</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.ExecutedOpsChangeEntry">ExecutedOpsChangeEntry</h3>
+        <p>ExecutedOpsChangeEntry</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>operation_id</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>string </p></td>
+                </tr>
+              
+                <tr>
+                  <td>value</td>
+                  <td><a href="#massa.model.v1.ExecutedOpsChangeValue">ExecutedOpsChangeValue</a></td>
+                  <td></td>
+                  <td><p>ExecutedOpsChangeValue </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.ExecutedOpsChangeValue">ExecutedOpsChangeValue</h3>
+        <p>ExecutedOpsChangeValue</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>status</td>
+                  <td><a href="#massa.model.v1.OperationExecutionStatus">OperationExecutionStatus</a></td>
+                  <td></td>
+                  <td><p>The status of the execution of the operation </p></td>
+                </tr>
+              
+                <tr>
+                  <td>slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Slot until which the operation remains valid (included) </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.ExecutionOutput">ExecutionOutput</h3>
+        <p>ExecutionOutput</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Slot </p></td>
+                </tr>
+              
+                <tr>
+                  <td>block_id</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td></td>
+                  <td><p>Block id at that slot (Optional) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>events</td>
+                  <td><a href="#massa.model.v1.ScExecutionEvent">ScExecutionEvent</a></td>
+                  <td>repeated</td>
+                  <td><p>Events emitted by the execution step </p></td>
+                </tr>
+              
+                <tr>
+                  <td>state_changes</td>
+                  <td><a href="#massa.model.v1.StateChanges">StateChanges</a></td>
+                  <td></td>
+                  <td><p>State changes caused by the execution step </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.ExecutionStackElement">ExecutionStackElement</h3>
+        <p>Structure describing an element of the execution stack.</p><p>Every time a function is called from bytecode,</p><p>a new `ExecutionStackElement` is pushed at the top of the execution stack</p><p>to represent the local execution context of the called function,</p><p>instead of the caller's which should lie just below in the stack.</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Called address </p></td>
+                </tr>
+              
+                <tr>
+                  <td>coins</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Coins transferred to the target address during the call </p></td>
+                </tr>
+              
+                <tr>
+                  <td>owned_addresses</td>
+                  <td><a href="#string">string</a></td>
+                  <td>repeated</td>
+                  <td><p>List of addresses owned by the current call, and on which the current call
+has write access. This list should contain `ExecutionStackElement::address`
+in the sense that an address should have write access to itself. This list
+should also contain all addresses created previously during the call to
+allow write access on newly created addresses in order to set them up, but
+only within the scope of the current stack element. That way, only the
+current scope and neither its caller not the functions it calls gain this
+write access, which is important for security. Note that we use a vector
+instead of a pre-hashed set to ensure order determinism, the performance
+hit of linear search remains minimal because `owned_addresses` will always
+contain very few elements. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>operation_datastore</td>
+                  <td><a href="#massa.model.v1.BytesMapFieldEntry">BytesMapFieldEntry</a></td>
+                  <td>repeated</td>
+                  <td><p>Datastore (key value store) for `ExecuteSC` Operation (Optional) </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.FinalizedExecutionOutput">FinalizedExecutionOutput</h3>
+        <p>FinalizedExecutionOutput</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Slot </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.FunctionCall">FunctionCall</h3>
+        <p>Execute a function call</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>target_address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Target address </p></td>
+                </tr>
+              
+                <tr>
+                  <td>target_function</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Target function </p></td>
+                </tr>
+              
+                <tr>
+                  <td>parameter</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Parameter to pass to the target function </p></td>
+                </tr>
+              
+                <tr>
+                  <td>coins</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Coins transferred to the target address during the call </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.LedgerChangeEntry">LedgerChangeEntry</h3>
+        <p>LedgerChangeEntry</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Address </p></td>
+                </tr>
+              
+                <tr>
+                  <td>value</td>
+                  <td><a href="#massa.model.v1.LedgerChangeValue">LedgerChangeValue</a></td>
+                  <td></td>
+                  <td><p>Ledger message </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.LedgerChangeValue">LedgerChangeValue</h3>
+        <p>LedgerChangeValue</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>type</td>
+                  <td><a href="#massa.model.v1.LedgerChangeType">LedgerChangeType</a></td>
+                  <td></td>
+                  <td><p>The type of the change </p></td>
+                </tr>
+              
+                <tr>
+                  <td>created_entry</td>
+                  <td><a href="#massa.model.v1.LedgerEntry">LedgerEntry</a></td>
+                  <td></td>
+                  <td><p>Created ledger entry </p></td>
+                </tr>
+              
+                <tr>
+                  <td>updated_entry</td>
+                  <td><a href="#massa.model.v1.LedgerEntryUpdate">LedgerEntryUpdate</a></td>
+                  <td></td>
+                  <td><p>Update ledger entry </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.LedgerEntry">LedgerEntry</h3>
+        <p>An entry associated to an address in the `FinalLedger`</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>balance</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p>The balance of that entry </p></td>
+                </tr>
+              
+                <tr>
+                  <td>bytecode</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Executable bytecode </p></td>
+                </tr>
+              
+                <tr>
+                  <td>datastore</td>
+                  <td><a href="#massa.model.v1.BytesMapFieldEntry">BytesMapFieldEntry</a></td>
+                  <td>repeated</td>
+                  <td><p>A key-value store associating a hash to arbitrary bytes </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.LedgerEntryUpdate">LedgerEntryUpdate</h3>
+        <p>Represents an update to one or more fields of a `LedgerEntry`</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>balance</td>
+                  <td><a href="#massa.model.v1.SetOrKeepBalance">SetOrKeepBalance</a></td>
+                  <td></td>
+                  <td><p>Change the balance </p></td>
+                </tr>
+              
+                <tr>
+                  <td>bytecode</td>
+                  <td><a href="#massa.model.v1.SetOrKeepBytes">SetOrKeepBytes</a></td>
+                  <td></td>
+                  <td><p>Change the executable bytecode </p></td>
+                </tr>
+              
+                <tr>
+                  <td>datastore</td>
+                  <td><a href="#massa.model.v1.SetOrDeleteDatastoreEntry">SetOrDeleteDatastoreEntry</a></td>
+                  <td>repeated</td>
+                  <td><p>Change datastore entries </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.ReadOnlyExecutionCall">ReadOnlyExecutionCall</h3>
+        <p>Read-only execution call</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>max_gas</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Maximum gas to spend in the execution. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>call_stack</td>
+                  <td><a href="#massa.model.v1.ExecutionStackElement">ExecutionStackElement</a></td>
+                  <td>repeated</td>
+                  <td><p>Call stack to simulate, older caller first </p></td>
+                </tr>
+              
+                <tr>
+                  <td>bytecode_call</td>
+                  <td><a href="#massa.model.v1.BytecodeExecution">BytecodeExecution</a></td>
+                  <td></td>
+                  <td><p>Byte code </p></td>
+                </tr>
+              
+                <tr>
+                  <td>function_call</td>
+                  <td><a href="#massa.model.v1.FunctionCall">FunctionCall</a></td>
+                  <td></td>
+                  <td><p>Function call </p></td>
+                </tr>
+              
+                <tr>
+                  <td>caller_address</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td></td>
+                  <td><p>Caller&#39;s address, (Optional) if not set, an auto-generated address will be
+used </p></td>
+                </tr>
+              
+                <tr>
+                  <td>fee</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p>fee paid by the caller when the call is processed (optional) </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.ReadOnlyExecutionOutput">ReadOnlyExecutionOutput</h3>
+        <p>Structure describing the output of a read only execution</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>out</td>
+                  <td><a href="#massa.model.v1.ExecutionOutput">ExecutionOutput</a></td>
+                  <td></td>
+                  <td><p>Output of a single execution </p></td>
+                </tr>
+              
+                <tr>
+                  <td>used_gas</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Gas cost for this execution </p></td>
+                </tr>
+              
+                <tr>
+                  <td>call_result</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Returned value from the module call </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.ScExecutionEvent">ScExecutionEvent</h3>
+        <p>ScExecutionEvent</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>context</td>
+                  <td><a href="#massa.model.v1.ScExecutionEventContext">ScExecutionEventContext</a></td>
+                  <td></td>
+                  <td><p>Sc execution context </p></td>
+                </tr>
+              
+                <tr>
+                  <td>data</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Generated data of the event </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.ScExecutionEventContext">ScExecutionEventContext</h3>
+        <p>ScExecutionEvent context</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>origin_slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>When was it generated </p></td>
+                </tr>
+              
+                <tr>
+                  <td>block_id</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td></td>
+                  <td><p>Block id if there was a block at that slot (Optional) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>index_in_slot</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Index of the event in the slot </p></td>
+                </tr>
+              
+                <tr>
+                  <td>call_stack</td>
+                  <td><a href="#string">string</a></td>
+                  <td>repeated</td>
+                  <td><p>Call stack addresses. most recent at the end </p></td>
+                </tr>
+              
+                <tr>
+                  <td>origin_operation_id</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td></td>
+                  <td><p>Origin operation id (Optional) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>is_failure</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>If a failure occurred </p></td>
+                </tr>
+              
+                <tr>
+                  <td>status</td>
+                  <td><a href="#massa.model.v1.ScExecutionEventStatus">ScExecutionEventStatus</a></td>
+                  <td></td>
+                  <td><p>Status </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.ScExecutionEventsStatus">ScExecutionEventsStatus</h3>
+        <p>ScExecutionEventsStatus</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>status</td>
+                  <td><a href="#massa.model.v1.ScExecutionEventStatus">ScExecutionEventStatus</a></td>
+                  <td>repeated</td>
+                  <td><p>Status </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.SetOrDeleteDatastoreEntry">SetOrDeleteDatastoreEntry</h3>
+        <p>Set or Delete DatastoreEntry</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>set</td>
+                  <td><a href="#massa.model.v1.BytesMapFieldEntry">BytesMapFieldEntry</a></td>
+                  <td></td>
+                  <td><p>Executable bytecode (Optional) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>delete</td>
+                  <td><a href="#massa.model.v1.Empty">Empty</a></td>
+                  <td></td>
+                  <td><p>Delete the existing bytecode </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.SetOrKeepAsyncMessageTrigger">SetOrKeepAsyncMessageTrigger</h3>
+        <p>Set or Keep AsyncMessageTrigger</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>set</td>
+                  <td><a href="#massa.model.v1.AsyncMessageTrigger">AsyncMessageTrigger</a></td>
+                  <td></td>
+                  <td><p>The value of that entry (Optional) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>keep</td>
+                  <td><a href="#massa.model.v1.Empty">Empty</a></td>
+                  <td></td>
+                  <td><p>Keep the existing value </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.SetOrKeepBalance">SetOrKeepBalance</h3>
+        <p>Set or Keep Balance</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>set</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p>The value of that entry (Optional) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>keep</td>
+                  <td><a href="#massa.model.v1.Empty">Empty</a></td>
+                  <td></td>
+                  <td><p>Keep the existing value </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.SetOrKeepBool">SetOrKeepBool</h3>
+        <p>Set or Keep Bool</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>set</td>
+                  <td><a href="#google.protobuf.BoolValue">google.protobuf.BoolValue</a></td>
+                  <td></td>
+                  <td><p>The value of that entry (Optional) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>keep</td>
+                  <td><a href="#massa.model.v1.Empty">Empty</a></td>
+                  <td></td>
+                  <td><p>Keep the existing value </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.SetOrKeepBytes">SetOrKeepBytes</h3>
+        <p>Set or Keep Bytes</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>set</td>
+                  <td><a href="#google.protobuf.BytesValue">google.protobuf.BytesValue</a></td>
+                  <td></td>
+                  <td><p>The value of that entry (Optional) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>keep</td>
+                  <td><a href="#massa.model.v1.Empty">Empty</a></td>
+                  <td></td>
+                  <td><p>Keep the existing value </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.SetOrKeepSlot">SetOrKeepSlot</h3>
+        <p>Set or Keep Slot</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>set</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>The value of that entry (Optional) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>keep</td>
+                  <td><a href="#massa.model.v1.Empty">Empty</a></td>
+                  <td></td>
+                  <td><p>Keep the existing value </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.SetOrKeepString">SetOrKeepString</h3>
+        <p>Set or Keep String</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>set</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td></td>
+                  <td><p>The value of that entry (Optional) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>keep</td>
+                  <td><a href="#massa.model.v1.Empty">Empty</a></td>
+                  <td></td>
+                  <td><p>Keep the existing value </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.SetOrKeepUint64">SetOrKeepUint64</h3>
+        <p>Set or Keep Uint64</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>set</td>
+                  <td><a href="#google.protobuf.UInt64Value">google.protobuf.UInt64Value</a></td>
+                  <td></td>
+                  <td><p>The value of that entry (Optional) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>keep</td>
+                  <td><a href="#massa.model.v1.Empty">Empty</a></td>
+                  <td></td>
+                  <td><p>Keep the existing value </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.SlotExecutionOutput">SlotExecutionOutput</h3>
+        <p>SlotExecutionOutput</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>status</td>
+                  <td><a href="#massa.model.v1.ExecutionOutputStatus">ExecutionOutputStatus</a></td>
+                  <td></td>
+                  <td><p>Status </p></td>
+                </tr>
+              
+                <tr>
+                  <td>execution_output</td>
+                  <td><a href="#massa.model.v1.ExecutionOutput">ExecutionOutput</a></td>
+                  <td></td>
+                  <td><p>Executed slot output </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.StateChanges">StateChanges</h3>
+        <p>StateChanges</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>ledger_changes</td>
+                  <td><a href="#massa.model.v1.LedgerChangeEntry">LedgerChangeEntry</a></td>
+                  <td>repeated</td>
+                  <td><p>Ledger changes </p></td>
+                </tr>
+              
+                <tr>
+                  <td>async_pool_changes</td>
+                  <td><a href="#massa.model.v1.AsyncPoolChangeEntry">AsyncPoolChangeEntry</a></td>
+                  <td>repeated</td>
+                  <td><p>Asynchronous pool changes </p></td>
+                </tr>
+              
+                <tr>
+                  <td>executed_ops_changes</td>
+                  <td><a href="#massa.model.v1.ExecutedOpsChangeEntry">ExecutedOpsChangeEntry</a></td>
+                  <td>repeated</td>
+                  <td><p>Executed operations changes </p></td>
+                </tr>
+              
+                <tr>
+                  <td>executed_denunciations_changes</td>
+                  <td><a href="#massa.model.v1.DenunciationIndex">DenunciationIndex</a></td>
+                  <td>repeated</td>
+                  <td><p>Executed denunciations changes </p></td>
+                </tr>
+              
+                <tr>
+                  <td>execution_trail_hash_change</td>
+                  <td><a href="#massa.model.v1.SetOrKeepString">SetOrKeepString</a></td>
+                  <td></td>
+                  <td><p>Execution trail hash change </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.TargetAmount">TargetAmount</h3>
+        <p></p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>amount</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.TransferValue">TransferValue</h3>
+        <p></p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>rolls</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>coins</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>deferred_credits</td>
+                  <td><a href="#massa.model.v1.NativeAmount">NativeAmount</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+        <h3 id="massa.model.v1.AsyncPoolChangeType">AsyncPoolChangeType</h3>
+        <p>AsyncPoolChangeType type enum</p>
+        <table class="enum-table">
+          <thead>
+            <tr><td>Name</td><td>Number</td><td>Description</td></tr>
+          </thead>
+          <tbody>
+            
+              <tr>
+                <td>ASYNC_POOL_CHANGE_TYPE_UNSPECIFIED</td>
+                <td>0</td>
+                <td><p>Default enum value</p></td>
+              </tr>
+            
+              <tr>
+                <td>ASYNC_POOL_CHANGE_TYPE_SET</td>
+                <td>1</td>
+                <td><p>Set type</p></td>
+              </tr>
+            
+              <tr>
+                <td>ASYNC_POOL_CHANGE_TYPE_UPDATE</td>
+                <td>2</td>
+                <td><p>Activate only type</p></td>
+              </tr>
+            
+              <tr>
+                <td>ASYNC_POOL_CHANGE_TYPE_DELETE</td>
+                <td>3</td>
+                <td><p>Delete only type</p></td>
+              </tr>
+            
+          </tbody>
+        </table>
+      
+        <h3 id="massa.model.v1.CoinOrigin">CoinOrigin</h3>
+        <p></p>
+        <table class="enum-table">
+          <thead>
+            <tr><td>Name</td><td>Number</td><td>Description</td></tr>
+          </thead>
+          <tbody>
+            
+              <tr>
+                <td>COIN_ORIGIN_UNSPECIFIED</td>
+                <td>0</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_BLOCK_REWARD</td>
+                <td>1</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_DEFERRED_CALL_FAIL</td>
+                <td>2</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_DEFERRED_CALL_CANCEL</td>
+                <td>3</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_DEFERRED_CALL_COINS</td>
+                <td>4</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_DEFERRED_CALL_REGISTER</td>
+                <td>5</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_DEFERRED_CALL_STORAGE_REFUND</td>
+                <td>6</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_ENDORSEMENT_REWARD</td>
+                <td>7</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_ENDORSED_REWARD</td>
+                <td>8</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_SLASH</td>
+                <td>9</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_OP_ROLL_BUY</td>
+                <td>10</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_OP_ROLL_SELL</td>
+                <td>11</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_OP_CALLSC_COINS</td>
+                <td>12</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_READ_ONLY_FN_CALL_FEES</td>
+                <td>13</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_READ_ONLY_FN_CALL_COINS</td>
+                <td>14</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_READ_ONLY_BYTECODE_EXEC_FEES</td>
+                <td>15</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_SET_BYTECODE_STORAGE</td>
+                <td>16</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_ABI_CALL_COINS</td>
+                <td>17</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_ABI_TRANSFER_COINS</td>
+                <td>18</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_ABI_TRANSFER_FOR_COINS</td>
+                <td>19</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_ABI_SEND_MSG_COINS</td>
+                <td>20</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_ABI_SEND_MSG_FEES</td>
+                <td>21</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_OP_ROLL_SELL_DEFERRED_MAS</td>
+                <td>22</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_OP_EXECUTESC_FEES</td>
+                <td>23</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_OP_TRANSACTION_COINS</td>
+                <td>24</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_OP_TRANSACTION_FEES</td>
+                <td>25</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_ASYNC_MSG_COINS</td>
+                <td>26</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_ASYNC_MSG_CANCEL</td>
+                <td>27</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_CREATE_SC_STORAGE</td>
+                <td>28</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_DATASTORE_STORAGE</td>
+                <td>29</td>
+                <td><p></p></td>
+              </tr>
+            
+              <tr>
+                <td>COIN_ORIGIN_DEFERRED_CREDIT</td>
+                <td>30</td>
+                <td><p></p></td>
+              </tr>
+            
+          </tbody>
+        </table>
+      
+        <h3 id="massa.model.v1.ExecutionOutputStatus">ExecutionOutputStatus</h3>
+        <p>ExecutionOutputStatus type enum</p>
+        <table class="enum-table">
+          <thead>
+            <tr><td>Name</td><td>Number</td><td>Description</td></tr>
+          </thead>
+          <tbody>
+            
+              <tr>
+                <td>EXECUTION_OUTPUT_STATUS_UNSPECIFIED</td>
+                <td>0</td>
+                <td><p>Default enum value</p></td>
+              </tr>
+            
+              <tr>
+                <td>EXECUTION_OUTPUT_STATUS_CANDIDATE</td>
+                <td>1</td>
+                <td><p>Candidate status</p></td>
+              </tr>
+            
+              <tr>
+                <td>EXECUTION_OUTPUT_STATUS_FINAL</td>
+                <td>2</td>
+                <td><p>Final status</p></td>
+              </tr>
+            
+              <tr>
+                <td>EXECUTION_OUTPUT_STATUS_UNKNOWN</td>
+                <td>3</td>
+                <td><p>Unknown status</p></td>
+              </tr>
+            
+          </tbody>
+        </table>
+      
+        <h3 id="massa.model.v1.LedgerChangeType">LedgerChangeType</h3>
+        <p>LedgerChangeType type enum</p>
+        <table class="enum-table">
+          <thead>
+            <tr><td>Name</td><td>Number</td><td>Description</td></tr>
+          </thead>
+          <tbody>
+            
+              <tr>
+                <td>LEDGER_CHANGE_TYPE_UNSPECIFIED</td>
+                <td>0</td>
+                <td><p>Default enum value</p></td>
+              </tr>
+            
+              <tr>
+                <td>LEDGER_CHANGE_TYPE_SET</td>
+                <td>1</td>
+                <td><p>Set type</p></td>
+              </tr>
+            
+              <tr>
+                <td>LEDGER_CHANGE_TYPE_UPDATE</td>
+                <td>2</td>
+                <td><p>Update type</p></td>
+              </tr>
+            
+              <tr>
+                <td>LEDGER_CHANGE_TYPE_DELETE</td>
+                <td>3</td>
+                <td><p>Delete type</p></td>
+              </tr>
+            
+          </tbody>
+        </table>
+      
+        <h3 id="massa.model.v1.OperationExecutionStatus">OperationExecutionStatus</h3>
+        <p>OperationExecutionStatus type enum</p>
+        <table class="enum-table">
+          <thead>
+            <tr><td>Name</td><td>Number</td><td>Description</td></tr>
+          </thead>
+          <tbody>
+            
+              <tr>
+                <td>OPERATION_EXECUTION_STATUS_UNSPECIFIED</td>
+                <td>0</td>
+                <td><p>Default enum value</p></td>
+              </tr>
+            
+              <tr>
+                <td>OPERATION_EXECUTION_STATUS_SUCCESS</td>
+                <td>1</td>
+                <td><p>Success status</p></td>
+              </tr>
+            
+              <tr>
+                <td>OPERATION_EXECUTION_STATUS_FAILED</td>
+                <td>2</td>
+                <td><p>Failed only status</p></td>
+              </tr>
+            
+          </tbody>
+        </table>
+      
+        <h3 id="massa.model.v1.ScExecutionEventStatus">ScExecutionEventStatus</h3>
+        <p>ScExecutionEventStatus type enum</p>
+        <table class="enum-table">
+          <thead>
+            <tr><td>Name</td><td>Number</td><td>Description</td></tr>
+          </thead>
+          <tbody>
+            
+              <tr>
+                <td>SC_EXECUTION_EVENT_STATUS_UNSPECIFIED</td>
+                <td>0</td>
+                <td><p>Default enum value</p></td>
+              </tr>
+            
+              <tr>
+                <td>SC_EXECUTION_EVENT_STATUS_FINAL</td>
+                <td>1</td>
+                <td><p>Final status</p></td>
+              </tr>
+            
+              <tr>
+                <td>SC_EXECUTION_EVENT_STATUS_READ_ONLY</td>
+                <td>2</td>
+                <td><p>Read only status</p></td>
+              </tr>
+            
+              <tr>
+                <td>SC_EXECUTION_EVENT_STATUS_CANDIDATE</td>
+                <td>3</td>
+                <td><p>Candidate status</p></td>
+              </tr>
+            
+          </tbody>
+        </table>
+      
+
+      
+
+      
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/slot.proto">massa/model/v1/slot.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.IndexedSlot">IndexedSlot</h3>
+        <p>When an address is drawn to create an endorsement it is selected for a specific index</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Slot </p></td>
+                </tr>
+              
+                <tr>
+                  <td>index</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Endorsement index in the slot </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.Slot">Slot</h3>
+        <p>A point in time where a block is expected</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>period</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Period </p></td>
+                </tr>
+              
+                <tr>
+                  <td>thread</td>
+                  <td><a href="#uint32">uint32</a></td>
+                  <td></td>
+                  <td><p>Thread </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.SlotRange">SlotRange</h3>
+        <p>SlotRange</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>start_slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Start lot (Optional) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>end_slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>End slot (Optional) </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.Slots">Slots</h3>
+        <p>Slots</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>slots</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td>repeated</td>
+                  <td><p>Slots </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+
+      
+
+      
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/address.proto">massa/model/v1/address.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.Addresses">Addresses</h3>
+        <p>Addresses holds addresses</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>addresses</td>
+                  <td><a href="#string">string</a></td>
+                  <td>repeated</td>
+                  <td><p>Addresses </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.NativeAddress">NativeAddress</h3>
+        <p>Massa NativeAddress</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>category</td>
+                  <td><a href="#massa.model.v1.AddressCategory">AddressCategory</a></td>
+                  <td></td>
+                  <td><p>Address category </p></td>
+                </tr>
+              
+                <tr>
+                  <td>version</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Address version </p></td>
+                </tr>
+              
+                <tr>
+                  <td>content</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Address content </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+        <h3 id="massa.model.v1.AddressCategory">AddressCategory</h3>
+        <p>Address category discriminant</p>
+        <table class="enum-table">
+          <thead>
+            <tr><td>Name</td><td>Number</td><td>Description</td></tr>
+          </thead>
+          <tbody>
+            
+              <tr>
+                <td>ADDRESS_CATEGORY_UNSPECIFIED</td>
+                <td>0</td>
+                <td><p>Unspecified address category</p></td>
+              </tr>
+            
+              <tr>
+                <td>ADDRESS_CATEGORY_USER_ADDRESS</td>
+                <td>1</td>
+                <td><p>User address</p></td>
+              </tr>
+            
+              <tr>
+                <td>ADDRESS_CATEGORY_SC_ADDRESS</td>
+                <td>2</td>
+                <td><p>Smart contract address</p></td>
+              </tr>
+            
+          </tbody>
+        </table>
+      
+
+      
+
+      
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/block.proto">massa/model/v1/block.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.Block">Block</h3>
+        <p>Block</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>header</td>
+                  <td><a href="#massa.model.v1.SignedBlockHeader">SignedBlockHeader</a></td>
+                  <td></td>
+                  <td><p>Signed header </p></td>
+                </tr>
+              
+                <tr>
+                  <td>operations</td>
+                  <td><a href="#string">string</a></td>
+                  <td>repeated</td>
+                  <td><p>Operations ids </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.BlockHeader">BlockHeader</h3>
+        <p>Block header</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>current_version</td>
+                  <td><a href="#uint32">uint32</a></td>
+                  <td></td>
+                  <td><p>Current network version </p></td>
+                </tr>
+              
+                <tr>
+                  <td>announced_version</td>
+                  <td><a href="#google.protobuf.UInt32Value">google.protobuf.UInt32Value</a></td>
+                  <td></td>
+                  <td><p>Announced network version(Optional) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Slot </p></td>
+                </tr>
+              
+                <tr>
+                  <td>parents</td>
+                  <td><a href="#string">string</a></td>
+                  <td>repeated</td>
+                  <td><p>parents </p></td>
+                </tr>
+              
+                <tr>
+                  <td>operations_hash</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>All operations hash </p></td>
+                </tr>
+              
+                <tr>
+                  <td>endorsements</td>
+                  <td><a href="#massa.model.v1.SignedEndorsement">SignedEndorsement</a></td>
+                  <td>repeated</td>
+                  <td><p>Signed endorsements </p></td>
+                </tr>
+              
+                <tr>
+                  <td>denunciations</td>
+                  <td><a href="#massa.model.v1.Denunciation">Denunciation</a></td>
+                  <td>repeated</td>
+                  <td><p>Denunciations </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.BlockIds">BlockIds</h3>
+        <p>BlockIds holds block ids</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>block_ids</td>
+                  <td><a href="#string">string</a></td>
+                  <td>repeated</td>
+                  <td><p>Block ids </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.BlockInfo">BlockInfo</h3>
+        <p>Informations about a block with its metadata</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>block_id</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>The unique ID of the block. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>status</td>
+                  <td><a href="#massa.model.v1.BlockStatus">BlockStatus</a></td>
+                  <td></td>
+                  <td><p>The execution status of the block </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.BlockParent">BlockParent</h3>
+        <p>Block parent tuple</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>block_id</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Block id </p></td>
+                </tr>
+              
+                <tr>
+                  <td>period</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Period </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.BlockWrapper">BlockWrapper</h3>
+        <p>A wrapper around a block with its metadata</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>status</td>
+                  <td><a href="#massa.model.v1.BlockStatus">BlockStatus</a></td>
+                  <td></td>
+                  <td><p>The execution status of the block </p></td>
+                </tr>
+              
+                <tr>
+                  <td>block</td>
+                  <td><a href="#massa.model.v1.Block">Block</a></td>
+                  <td></td>
+                  <td><p>The block object itself </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.FilledBlock">FilledBlock</h3>
+        <p>Filled block</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>header</td>
+                  <td><a href="#massa.model.v1.SignedBlockHeader">SignedBlockHeader</a></td>
+                  <td></td>
+                  <td><p>Signed header </p></td>
+                </tr>
+              
+                <tr>
+                  <td>operations</td>
+                  <td><a href="#massa.model.v1.FilledOperationEntry">FilledOperationEntry</a></td>
+                  <td>repeated</td>
+                  <td><p>Operations </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.FilledOperationEntry">FilledOperationEntry</h3>
+        <p>Filled Operation Tuple</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>operation_id</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Operation id </p></td>
+                </tr>
+              
+                <tr>
+                  <td>operation</td>
+                  <td><a href="#massa.model.v1.SignedOperation">SignedOperation</a></td>
+                  <td></td>
+                  <td><p>Signed operation </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.SignedBlock">SignedBlock</h3>
+        <p>Signed block</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>content</td>
+                  <td><a href="#massa.model.v1.Block">Block</a></td>
+                  <td></td>
+                  <td><p>Block </p></td>
+                </tr>
+              
+                <tr>
+                  <td>signature</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>A cryptographically generated value using `serialized_data` and a public key. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>content_creator_pub_key</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>The public-key component used in the generation of the signature </p></td>
+                </tr>
+              
+                <tr>
+                  <td>content_creator_address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Derived from the same public key used to generate the signature </p></td>
+                </tr>
+              
+                <tr>
+                  <td>secure_hash</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>A secure hash of the non-malleable contents of a deterministic binary representation of the block header </p></td>
+                </tr>
+              
+                <tr>
+                  <td>serialized_size</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>The size of the serialized block in bytes </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.SignedBlockHeader">SignedBlockHeader</h3>
+        <p>Signed block header</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>content</td>
+                  <td><a href="#massa.model.v1.BlockHeader">BlockHeader</a></td>
+                  <td></td>
+                  <td><p>BlockHeader </p></td>
+                </tr>
+              
+                <tr>
+                  <td>signature</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>A cryptographically generated value using `serialized_data` and a public key. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>content_creator_pub_key</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>The public-key component used in the generation of the signature </p></td>
+                </tr>
+              
+                <tr>
+                  <td>content_creator_address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Derived from the same public key used to generate the signature </p></td>
+                </tr>
+              
+                <tr>
+                  <td>secure_hash</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>A secure hash of the non-malleable contents of a deterministic binary representation of the block header </p></td>
+                </tr>
+              
+                <tr>
+                  <td>serialized_size</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>The size of the serialized block header in bytes </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+        <h3 id="massa.model.v1.BlockStatus">BlockStatus</h3>
+        <p>Possible statuses for a block</p>
+        <table class="enum-table">
+          <thead>
+            <tr><td>Name</td><td>Number</td><td>Description</td></tr>
+          </thead>
+          <tbody>
+            
+              <tr>
+                <td>BLOCK_STATUS_UNSPECIFIED</td>
+                <td>0</td>
+                <td><p>Default enum value</p></td>
+              </tr>
+            
+              <tr>
+                <td>BLOCK_STATUS_NON_FINAL_BLOCKCLIQUE</td>
+                <td>1</td>
+                <td><p>The block is in the greatest clique (and not final)</p></td>
+              </tr>
+            
+              <tr>
+                <td>BLOCK_STATUS_FINAL</td>
+                <td>2</td>
+                <td><p>The block is final</p></td>
+              </tr>
+            
+              <tr>
+                <td>BLOCK_STATUS_NON_FINAL_ALTERNATE_CLIQUE</td>
+                <td>3</td>
+                <td><p>The block is candidate (active any clique but not final)</p></td>
+              </tr>
+            
+              <tr>
+                <td>BLOCK_STATUS_DISCARDED</td>
+                <td>4</td>
+                <td><p>The block is discarded</p></td>
+              </tr>
+            
+          </tbody>
+        </table>
+      
+
+      
+
+      
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/endorsement.proto">massa/model/v1/endorsement.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.Endorsement">Endorsement</h3>
+        <p>An endorsement, as sent in the network</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>slot</td>
+                  <td><a href="#massa.model.v1.Slot">Slot</a></td>
+                  <td></td>
+                  <td><p>Slot in which the endorsement can be included </p></td>
+                </tr>
+              
+                <tr>
+                  <td>index</td>
+                  <td><a href="#uint32">uint32</a></td>
+                  <td></td>
+                  <td><p>Endorsement index inside the including block </p></td>
+                </tr>
+              
+                <tr>
+                  <td>endorsed_block</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Hash of endorsed block
+This is the parent in thread `self.slot.thread` of the block in which the endorsement is included </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.EndorsementIds">EndorsementIds</h3>
+        <p>EndorsementIds holds endorsements ids</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>endorsement_ids</td>
+                  <td><a href="#string">string</a></td>
+                  <td>repeated</td>
+                  <td><p>Endorsements ids </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.EndorsementInfo">EndorsementInfo</h3>
+        <p>Informations about an endorsement with its metadata</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>endorsement_id</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>The endorsement id </p></td>
+                </tr>
+              
+                <tr>
+                  <td>in_pool</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>Whether the endorsement is still in pool </p></td>
+                </tr>
+              
+                <tr>
+                  <td>in_blocks</td>
+                  <td><a href="#string">string</a></td>
+                  <td>repeated</td>
+                  <td><p>The endorsement appears in `in_blocks`
+If it appears in multiple blocks, these blocks are in different cliques </p></td>
+                </tr>
+              
+                <tr>
+                  <td>is_final</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>Whether the the endorsement is final (for example in a final block) </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.EndorsementWrapper">EndorsementWrapper</h3>
+        <p>A wrapper around an endorsement with its metadata</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>in_pool</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>Whether the endorsement is still in pool </p></td>
+                </tr>
+              
+                <tr>
+                  <td>in_blocks</td>
+                  <td><a href="#string">string</a></td>
+                  <td>repeated</td>
+                  <td><p>The endorsement appears in `in_blocks`
+If it appears in multiple blocks, these blocks are in different cliques </p></td>
+                </tr>
+              
+                <tr>
+                  <td>is_final</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>Whether the the endorsement is final (for example in a final block) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>endorsement</td>
+                  <td><a href="#massa.model.v1.SignedEndorsement">SignedEndorsement</a></td>
+                  <td></td>
+                  <td><p>The endorsement itself </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.model.v1.SignedEndorsement">SignedEndorsement</h3>
+        <p>Signed endorsement</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>content</td>
+                  <td><a href="#massa.model.v1.Endorsement">Endorsement</a></td>
+                  <td></td>
+                  <td><p>Endorsement </p></td>
+                </tr>
+              
+                <tr>
+                  <td>signature</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>A cryptographically generated value using `serialized_data` and a public key. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>content_creator_pub_key</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>The public-key component used in the generation of the signature </p></td>
+                </tr>
+              
+                <tr>
+                  <td>content_creator_address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Derived from the same public key used to generate the signature </p></td>
+                </tr>
+              
+                <tr>
+                  <td>secure_hash</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>A secure hash of the non-malleable contents of a deterministic binary representation of the block header </p></td>
+                </tr>
+              
+                <tr>
+                  <td>serialized_size</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>The size of the serialized endorsement in bytes </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+
+      
+
+      
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/model/v1/time.proto">massa/model/v1/time.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.model.v1.NativeTime">NativeTime</h3>
+        <p>NativeTime represents a native duration or unix timestamp</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>milliseconds</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Milliseconds </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+
+      
+
+      
+    
+
+    <h2 id="scalar-value-types">Scalar Value Types</h2>
+    <table class="scalar-value-types-table">
+      <thead>
+        <tr><td>.proto Type</td><td>Notes</td><td>C++</td><td>Java</td><td>Python</td><td>Go</td><td>C#</td><td>PHP</td><td>Ruby</td></tr>
+      </thead>
+      <tbody>
+        
+          <tr id="double">
+            <td>double</td>
+            <td></td>
+            <td>double</td>
+            <td>double</td>
+            <td>float</td>
+            <td>float64</td>
+            <td>double</td>
+            <td>float</td>
+            <td>Float</td>
+          </tr>
+        
+          <tr id="float">
+            <td>float</td>
+            <td></td>
+            <td>float</td>
+            <td>float</td>
+            <td>float</td>
+            <td>float32</td>
+            <td>float</td>
+            <td>float</td>
+            <td>Float</td>
+          </tr>
+        
+          <tr id="int32">
+            <td>int32</td>
+            <td>Uses variable-length encoding. Inefficient for encoding negative numbers – if your field is likely to have negative values, use sint32 instead.</td>
+            <td>int32</td>
+            <td>int</td>
+            <td>int</td>
+            <td>int32</td>
+            <td>int</td>
+            <td>integer</td>
+            <td>Bignum or Fixnum (as required)</td>
+          </tr>
+        
+          <tr id="int64">
+            <td>int64</td>
+            <td>Uses variable-length encoding. Inefficient for encoding negative numbers – if your field is likely to have negative values, use sint64 instead.</td>
+            <td>int64</td>
+            <td>long</td>
+            <td>int/long</td>
+            <td>int64</td>
+            <td>long</td>
+            <td>integer/string</td>
+            <td>Bignum</td>
+          </tr>
+        
+          <tr id="uint32">
+            <td>uint32</td>
+            <td>Uses variable-length encoding.</td>
+            <td>uint32</td>
+            <td>int</td>
+            <td>int/long</td>
+            <td>uint32</td>
+            <td>uint</td>
+            <td>integer</td>
+            <td>Bignum or Fixnum (as required)</td>
+          </tr>
+        
+          <tr id="uint64">
+            <td>uint64</td>
+            <td>Uses variable-length encoding.</td>
+            <td>uint64</td>
+            <td>long</td>
+            <td>int/long</td>
+            <td>uint64</td>
+            <td>ulong</td>
+            <td>integer/string</td>
+            <td>Bignum or Fixnum (as required)</td>
+          </tr>
+        
+          <tr id="sint32">
+            <td>sint32</td>
+            <td>Uses variable-length encoding. Signed int value. These more efficiently encode negative numbers than regular int32s.</td>
+            <td>int32</td>
+            <td>int</td>
+            <td>int</td>
+            <td>int32</td>
+            <td>int</td>
+            <td>integer</td>
+            <td>Bignum or Fixnum (as required)</td>
+          </tr>
+        
+          <tr id="sint64">
+            <td>sint64</td>
+            <td>Uses variable-length encoding. Signed int value. These more efficiently encode negative numbers than regular int64s.</td>
+            <td>int64</td>
+            <td>long</td>
+            <td>int/long</td>
+            <td>int64</td>
+            <td>long</td>
+            <td>integer/string</td>
+            <td>Bignum</td>
+          </tr>
+        
+          <tr id="fixed32">
+            <td>fixed32</td>
+            <td>Always four bytes. More efficient than uint32 if values are often greater than 2^28.</td>
+            <td>uint32</td>
+            <td>int</td>
+            <td>int</td>
+            <td>uint32</td>
+            <td>uint</td>
+            <td>integer</td>
+            <td>Bignum or Fixnum (as required)</td>
+          </tr>
+        
+          <tr id="fixed64">
+            <td>fixed64</td>
+            <td>Always eight bytes. More efficient than uint64 if values are often greater than 2^56.</td>
+            <td>uint64</td>
+            <td>long</td>
+            <td>int/long</td>
+            <td>uint64</td>
+            <td>ulong</td>
+            <td>integer/string</td>
+            <td>Bignum</td>
+          </tr>
+        
+          <tr id="sfixed32">
+            <td>sfixed32</td>
+            <td>Always four bytes.</td>
+            <td>int32</td>
+            <td>int</td>
+            <td>int</td>
+            <td>int32</td>
+            <td>int</td>
+            <td>integer</td>
+            <td>Bignum or Fixnum (as required)</td>
+          </tr>
+        
+          <tr id="sfixed64">
+            <td>sfixed64</td>
+            <td>Always eight bytes.</td>
+            <td>int64</td>
+            <td>long</td>
+            <td>int/long</td>
+            <td>int64</td>
+            <td>long</td>
+            <td>integer/string</td>
+            <td>Bignum</td>
+          </tr>
+        
+          <tr id="bool">
+            <td>bool</td>
+            <td></td>
+            <td>bool</td>
+            <td>boolean</td>
+            <td>boolean</td>
+            <td>bool</td>
+            <td>bool</td>
+            <td>boolean</td>
+            <td>TrueClass/FalseClass</td>
+          </tr>
+        
+          <tr id="string">
+            <td>string</td>
+            <td>A string must always contain UTF-8 encoded or 7-bit ASCII text.</td>
+            <td>string</td>
+            <td>String</td>
+            <td>str/unicode</td>
+            <td>string</td>
+            <td>string</td>
+            <td>string</td>
+            <td>String (UTF-8)</td>
+          </tr>
+        
+          <tr id="bytes">
+            <td>bytes</td>
+            <td>May contain any arbitrary sequence of bytes.</td>
+            <td>string</td>
+            <td>ByteString</td>
+            <td>str</td>
+            <td>[]byte</td>
+            <td>ByteString</td>
+            <td>string</td>
+            <td>String (ASCII-8BIT)</td>
+          </tr>
+        
+      </tbody>
+    </table>
+  </body>
+</html>
+

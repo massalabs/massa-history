@@ -1,0 +1,66 @@
+// Copyright (c) 2023 MASSA LABS <info@massa.net>
+
+syntax = "proto3";
+
+package massa.model.v1;
+
+import "massa/model/v1/time.proto";
+
+option csharp_namespace = "Com.Massa.Model.v1";
+option go_package = "github.com/massalabs/massa/model/v1;v1";
+option java_multiple_files = true;
+option java_package = "com.massa.model.v1";
+option objc_class_prefix = "MMODEL";
+option php_namespace = "Com\\Massa\\Model\\V1";
+option ruby_package = "Com::Massa::Model::V1";
+option swift_prefix = "MMODEL";
+
+// Entry for GetMipStatusResponse
+message MipStatusEntry {
+  // Mip info
+  MipInfo mip_info = 1;
+  // State id
+  ComponentStateId state_id = 2;
+}
+
+// MIP info (name & versions & time range for a MIP)
+message MipInfo {
+  // MIP name or descriptive name
+  string name = 1;
+  // Network (or global) version (to be included in block header)
+  uint32 version = 2;
+  // A timestamp at which the version gains its meaning (e.g. announced in block header)
+  massa.model.v1.NativeTime start = 3;
+  // A timestamp at the which the deployment is considered failed
+  massa.model.v1.NativeTime timeout = 4;
+  // Once deployment has been locked, wait for this duration before deployment is considered active
+  massa.model.v1.NativeTime activation_delay = 5;
+  // Components concerned by this versioning (e.g. a new Block version), and the associated component_version
+  repeated MipComponentEntry components = 6;
+}
+
+// MipComponentEntry
+message MipComponentEntry {
+  // Kind
+  MipComponent kind = 1;
+  // Version
+  uint32 version = 2;
+}
+
+// State machine for a Versioning component that tracks the deployment state
+enum ComponentStateId {
+  COMPONENT_STATE_ID_UNSPECIFIED = 0; // Default enum value
+  COMPONENT_STATE_ID_ERROR = 1; // Error state
+  COMPONENT_STATE_ID_DEFINED = 2; // Initial state
+  COMPONENT_STATE_ID_STARTED = 3; // Past start, can only go to LockedIn after the threshold is above a given value
+  COMPONENT_STATE_ID_LOCKEDIN = 4; // Locked but wait for some time before going to active (to let users the time to upgrade)
+  COMPONENT_STATE_ID_ACTIVE = 5; // After LockedIn, deployment is considered successful (after activation delay)
+  COMPONENT_STATE_ID_FAILED = 6; // Past the timeout, if LockedIn is not reach
+}
+
+// Versioning component enum
+enum MipComponent {
+  MIP_COMPONENT_UNSPECIFIED = 0; // Default enum value
+  MIP_COMPONENT_ADDRESS = 1; // Address component
+  MIP_COMPONENT_KEYPAIR = 2; // Keypair component
+}

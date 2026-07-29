@@ -1,0 +1,95 @@
+// Copyright (c) 2023 MASSA LABS <info@massa.net>
+
+syntax = "proto3";
+
+package massa.model.v1;
+
+import "massa/model/v1/amount.proto";
+import "massa/model/v1/slot.proto";
+
+option csharp_namespace = "Com.Massa.Model.v1";
+option go_package = "github.com/massalabs/massa/model/v1;v1";
+option java_multiple_files = true;
+option java_package = "com.massa.model.v1";
+option objc_class_prefix = "MMODEL";
+option php_namespace = "Com\\Massa\\Model\\V1";
+option ruby_package = "Com::Massa::Model::V1";
+option swift_prefix = "MMODEL";
+
+message Denunciation {
+  // BlockHeaderDenunciation or EndorsementDenunciation
+  oneof entry {
+    // Denunciation block header
+    BlockHeaderDenunciation block_header = 1;
+    // Denunciation endorsement
+    EndorsementDenunciation endorsement = 2;
+    // Denunciation address
+    DenunciationAddress address = 3;
+  }
+}
+
+message BlockHeaderDenunciation {
+  // Denunciation public key
+  string public_key = 1;
+  // Denunciation slot
+  massa.model.v1.Slot slot = 2;
+  // Denunciation hash 1
+  string hash_1 = 3;
+  // Denunciation hash 2
+  string hash_2 = 4;
+  // Denunciation sig 1
+  string signature_1 = 5;
+  // Denunciation sig 2
+  string signature_2 = 6;
+}
+
+message EndorsementDenunciation {
+  // Denunciation public key
+  string public_key = 1;
+  // Denunciation slot
+  massa.model.v1.Slot slot = 2;
+  // Denunciation index
+  uint32 index = 3;
+  // Denunciation hash 1
+  string hash_1 = 4;
+  // Denunciation hash 2
+  string hash_2 = 5;
+  // Denunciation sig 1
+  string signature_1 = 6;
+  // Denunciation sig 2
+  string signature_2 = 7;
+}
+
+// Index for Denunciations in collections (e.g. like a HashMap...)
+message DenunciationIndex {
+  // DenunciationBlockHeader or DenunciationEndorsement
+  oneof entry {
+    // Denunciation block header
+    DenunciationBlockHeader block_header = 1;
+    // Denunciation endorsement
+    DenunciationEndorsement endorsement = 2;
+  }
+}
+
+// Variant for Block header denunciation index
+message DenunciationBlockHeader {
+  // Denunciation slot
+  massa.model.v1.Slot slot = 1;
+}
+
+// Variant for Endorsement denunciation index
+message DenunciationEndorsement {
+  // Denounciation slot
+  massa.model.v1.Slot slot = 1;
+  // Denounciation index
+  uint32 index = 2;
+}
+
+message DenunciationAddress {
+  // target address
+  string address_denounced = 1;
+  // slot
+  massa.model.v1.Slot slot = 2;
+  // amount slashed
+  massa.model.v1.NativeAmount slashed = 4;
+}

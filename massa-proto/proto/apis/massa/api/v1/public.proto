@@ -1,0 +1,1436 @@
+// Copyright (c) 2023 MASSA LABS <info@massa.net>
+
+syntax = "proto3";
+
+package massa.api.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+import "massa/model/v1/address.proto";
+import "massa/model/v1/amount.proto";
+import "massa/model/v1/block.proto";
+import "massa/model/v1/commons.proto";
+import "massa/model/v1/datastore.proto";
+import "massa/model/v1/denunciation.proto";
+import "massa/model/v1/draw.proto";
+import "massa/model/v1/endorsement.proto";
+import "massa/model/v1/execution.proto";
+import "massa/model/v1/node.proto";
+import "massa/model/v1/operation.proto";
+import "massa/model/v1/slot.proto";
+import "massa/model/v1/staker.proto";
+
+option csharp_namespace = "Com.Massa.Api.v1";
+option go_package = "github.com/massalabs/massa/api/v1;v1";
+option java_multiple_files = true;
+option java_package = "com.massa.api.v1";
+option objc_class_prefix = "MAPI";
+option php_namespace = "Com\\Massa\\Api\\V1";
+option ruby_package = "Com::Massa::Api::V1";
+option swift_prefix = "MAPI";
+
+// Massa public gRPC service
+service PublicService {
+  // Execute read only call
+  rpc ExecuteReadOnlyCall(ExecuteReadOnlyCallRequest) returns (ExecuteReadOnlyCallResponse) {
+    option (google.api.http) = {
+      post: "/v1/execute_read_only_call"
+      body: "*"
+    };
+  }
+
+  // Get blocks by ids
+  rpc GetBlocks(GetBlocksRequest) returns (GetBlocksResponse) {
+    option (google.api.http) = {
+      post: "/v1/get_blocks"
+      body: "*"
+    };
+  }
+
+  // Get datastore entries
+  rpc GetDatastoreEntries(GetDatastoreEntriesRequest) returns (GetDatastoreEntriesResponse) {
+    option (google.api.http) = {
+      post: "/v1/get_datastore_entries"
+      body: "*"
+    };
+  }
+
+  // Get endorsements by ids
+  rpc GetEndorsements(GetEndorsementsRequest) returns (GetEndorsementsResponse) {
+    option (google.api.http) = {
+      post: "/v1/get_endorsements"
+      body: "*"
+    };
+  }
+
+  // Get next block best parents
+  rpc GetNextBlockBestParents(GetNextBlockBestParentsRequest) returns (GetNextBlockBestParentsResponse) {
+    option (google.api.http) = {
+      post: "/v1/get_next_block_best_parents"
+      body: "*"
+    };
+  }
+
+  // Get operations by ids
+  rpc GetOperations(GetOperationsRequest) returns (GetOperationsResponse) {
+    option (google.api.http) = {
+      post: "/v1/get_operations"
+      body: "*"
+    };
+  }
+
+  // Get smart contracts execution events
+  rpc GetScExecutionEvents(GetScExecutionEventsRequest) returns (GetScExecutionEventsResponse) {
+    option (google.api.http) = {
+      post: "/v1/get_sc_execution_events"
+      body: "*"
+    };
+  }
+
+  // Get selector draws
+  rpc GetSelectorDraws(GetSelectorDrawsRequest) returns (GetSelectorDrawsResponse) {
+    option (google.api.http) = {
+      post: "/v1/get_selector_draws"
+      body: "*"
+    };
+  }
+
+  // Get stakers
+  rpc GetStakers(GetStakersRequest) returns (GetStakersResponse) {
+    option (google.api.http) = {
+      post: "/v1/get_stakers"
+      body: "*"
+    };
+  }
+
+  // Get status
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse) {
+    option (google.api.http) = {
+      post: "/v1/get_status"
+      body: "*"
+    };
+  }
+
+  // Get transactions throughput
+  rpc GetTransactionsThroughput(GetTransactionsThroughputRequest) returns (GetTransactionsThroughputResponse) {
+    option (google.api.http) = {
+      post: "/v1/transactions_throughput"
+      body: "*"
+    };
+  }
+
+  // Query state
+  rpc QueryState(QueryStateRequest) returns (QueryStateResponse) {
+    option (google.api.http) = {
+      post: "/v1/query_state"
+      body: "*"
+    };
+  }
+
+  // Search blocks
+  rpc SearchBlocks(SearchBlocksRequest) returns (SearchBlocksResponse) {
+    option (google.api.http) = {
+      post: "/v1/search_blocks"
+      body: "*"
+    };
+  }
+
+  // Search endorsements
+  rpc SearchEndorsements(SearchEndorsementsRequest) returns (SearchEndorsementsResponse) {
+    option (google.api.http) = {
+      post: "/v1/search_endorsements"
+      body: "*"
+    };
+  }
+
+  // Search operations
+  rpc SearchOperations(SearchOperationsRequest) returns (SearchOperationsResponse) {
+    option (google.api.http) = {
+      post: "/v1/search_operations"
+      body: "*"
+    };
+  }
+
+  // Get ABI call stack of an operation
+  rpc GetOperationABICallStacks(GetOperationABICallStacksRequest) returns (GetOperationABICallStacksResponse) {
+    option (google.api.http) = {
+      post: "/v1/get_operation_abi_call_stacks"
+      body: "*"
+    };
+  }
+
+  // Get ABI call stack of all asynchronous executions and all operations for a
+  // given slot
+  rpc GetSlotABICallStacks(GetSlotABICallStacksRequest) returns (GetSlotABICallStacksResponse) {
+    option (google.api.http) = {
+      post: "/v1/get_slot_abi_call_stacks"
+      body: "*"
+    };
+  }
+
+  // Get all the transfers of MAS for a given slot
+  rpc GetSlotTransfers(GetSlotTransfersRequest) returns (GetSlotTransfersResponse) {
+    option (google.api.http) = {
+      post: "/v1/get_slot_transfers"
+      body: "*"
+    };
+  }
+
+  // ███████╗████████╗██████╗ ███████╗ █████╗ ███╗   ███╗
+  // ██╔════╝╚══██╔══╝██╔══██╗██╔════╝██╔══██╗████╗ ████║
+  // ███████╗   ██║   ██████╔╝█████╗  ███████║██╔████╔██║
+  // ╚════██║   ██║   ██╔══██╗██╔══╝  ██╔══██║██║╚██╔╝██║
+  // ███████║   ██║   ██║  ██║███████╗██║  ██║██║ ╚═╝ ██║
+
+  // New received and produced blocks
+  rpc NewBlocks(stream NewBlocksRequest) returns (stream NewBlocksResponse) {}
+  // unidirecitonnal
+  rpc NewBlocksServer(NewBlocksServerRequest) returns (stream NewBlocksServerResponse) {}
+
+  // New received and produced endorsements
+  rpc NewEndorsements(stream NewEndorsementsRequest) returns (stream NewEndorsementsResponse) {}
+
+  // New received and produced endorsements
+  rpc NewEndorsementsServer(NewEndorsementsServerRequest) returns (stream NewEndorsementsServerResponse) {}
+
+  // New received and produced blocks with operations
+  rpc NewFilledBlocks(stream NewFilledBlocksRequest) returns (stream NewFilledBlocksResponse) {}
+
+  // New received and produced blocks with operations unidirectional
+  rpc NewFilledBlocksServer(NewFilledBlocksServerRequest) returns (stream NewFilledBlocksServerResponse) {}
+
+  // New received and produced operations
+  rpc NewOperations(stream NewOperationsRequest) returns (stream NewOperationsResponse) {}
+
+  // unidirectional stream NewOperations
+  rpc NewOperationsServer(NewOperationsServerRequest) returns (stream NewOperationsServerResponse) {}
+
+  // New received and slot execution events
+  rpc NewSlotExecutionOutputs(stream NewSlotExecutionOutputsRequest) returns (stream NewSlotExecutionOutputsResponse) {}
+
+  // unidirectional stream NewSlotExecutionOutputs
+  rpc NewSlotExecutionOutputsServer(NewSlotExecutionOutputsServerRequest) returns (stream NewSlotExecutionOutputsServerResponse) {}
+
+  // Call stack for each slot executed
+  rpc NewSlotABICallStacks(stream NewSlotABICallStacksRequest) returns (stream NewSlotABICallStacksResponse) {}
+
+  // Transfer list for each slot executed
+  rpc NewSlotTransfers(stream NewSlotTransfersRequest) returns (stream NewSlotTransfersResponse) {}
+
+  // Send blocks
+  rpc SendBlocks(stream SendBlocksRequest) returns (stream SendBlocksResponse) {}
+
+  // Send endorsements
+  rpc SendEndorsements(stream SendEndorsementsRequest) returns (stream SendEndorsementsResponse) {}
+
+  // Send operations
+  rpc SendOperations(stream SendOperationsRequest) returns (stream SendOperationsResponse) {}
+
+  // Transactions throughput
+  rpc TransactionsThroughput(stream TransactionsThroughputRequest) returns (stream TransactionsThroughputResponse) {}
+
+  // Transactions throughput unidirectional
+  rpc TransactionsThroughputServer(TransactionsThroughputServerRequest) returns (stream TransactionsThroughputServerResponse) {}
+
+  // New execution Info
+  rpc NewTransfersInfoServer(NewTransfersInfoServerRequest) returns (stream NewTransfersInfoServerResponse) {}
+}
+
+// ExecuteReadOnlyCallRequest holds request for ExecuteReadOnlyCall
+message ExecuteReadOnlyCallRequest {
+  // Execution call
+  massa.model.v1.ReadOnlyExecutionCall call = 1;
+}
+
+// ExecuteReadOnlyCallResponse holds response from ExecuteReadOnlyCall
+message ExecuteReadOnlyCallResponse {
+  // Execution output
+  massa.model.v1.ReadOnlyExecutionOutput output = 1;
+}
+
+// GetBlocksRequest holds request for GetBlocks
+message GetBlocksRequest {
+  // Block ids
+  repeated string block_ids = 1;
+}
+
+// GetBlocksResponse holds response from GetBlocks
+message GetBlocksResponse {
+  // Wrapped blocks
+  repeated massa.model.v1.BlockWrapper wrapped_blocks = 1;
+}
+
+// GetDatastoreEntriesRequest holds request from GetDatastoreEntries
+message GetDatastoreEntriesRequest {
+  // Returns all the datastore entries that verify all the filters
+  repeated GetDatastoreEntryFilter filters = 1;
+}
+
+// DatastoreEntryFilter
+message GetDatastoreEntryFilter {
+  // Filter
+  oneof filter {
+    // One of these (address-key) pairs
+    massa.model.v1.AddressKeyEntry address_key = 1;
+  }
+}
+
+// GetDatastoreEntriesResponse holds response from GetDatastoreEntries
+message GetDatastoreEntriesResponse {
+  // Datastore entries
+  repeated massa.model.v1.DatastoreEntry datastore_entries = 1;
+}
+
+// GetEndorsementsRequest holds request for GetEndorsements
+message GetEndorsementsRequest {
+  // Endorsement ids
+  repeated string endorsement_ids = 1;
+}
+
+// GetEndorsementsResponse holds response from GetEndorsements
+message GetEndorsementsResponse {
+  // Wrapped operations
+  repeated massa.model.v1.EndorsementWrapper wrapped_endorsements = 1;
+}
+
+// GetNextBlockBestParentsRequest holds request for GetNextBlockBestParents
+message GetNextBlockBestParentsRequest {}
+
+// GetNextBlockBestParentsResponse holds response from GetNextBlockBestParents
+message GetNextBlockBestParentsResponse {
+  // Next block best parents
+  repeated massa.model.v1.BlockParent block_parents = 1;
+}
+
+// GetOperationsRequest holds request for GetOperations
+message GetOperationsRequest {
+  // Operation ids
+  repeated string operation_ids = 1;
+}
+
+// GetOperationsResponse holds response from GetOperations
+message GetOperationsResponse {
+  // Wrapped operations
+  repeated massa.model.v1.OperationWrapper wrapped_operations = 1;
+}
+
+// GetScExecutionEventsRequest holds request for GetScExecutionEvents
+message GetScExecutionEventsRequest {
+  // Returns all the sc execution events that verify all the filters
+  repeated ScExecutionEventsFilter filters = 1;
+}
+
+// ScExecutionEvents Filter
+message ScExecutionEventsFilter {
+  // Filter
+  oneof filter {
+    // Slot range
+    massa.model.v1.SlotRange slot_range = 1;
+    // Caller address
+    string caller_address = 2;
+    // Emitter address
+    string emitter_address = 3;
+    // Original operation id
+    string original_operation_id = 4;
+    // Whether the event is a failure
+    bool is_failure = 5;
+    // Status
+    massa.model.v1.ScExecutionEventStatus status = 6;
+  }
+}
+
+// GetScExecutionEventsResponse holds response from GetScExecutionEvents
+message GetScExecutionEventsResponse {
+  // ScExecutionEvents
+  repeated massa.model.v1.ScExecutionEvent events = 1;
+}
+
+// GetStatusRequest holds request from GetStatus
+message GetStatusRequest {}
+
+// GetStatusResponse holds request from GetStatus
+message GetStatusResponse {
+  // Status
+  massa.model.v1.PublicStatus status = 1;
+}
+
+// GetSelectorDrawsRequest holds request from GetSelectorDraws
+message GetSelectorDrawsRequest {
+  // Returns all the selector draws that verify all the filters
+  repeated SelectorDrawsFilter filters = 1;
+}
+
+// SelectorDraws Filter
+message SelectorDrawsFilter {
+  // Returns all the selector draws that verify all the filters
+  oneof filter {
+    // One of the Addresses
+    massa.model.v1.Addresses addresses = 1;
+    // One of the Slot range
+    massa.model.v1.SlotRange slot_range = 2;
+  }
+}
+
+// GetSelectorDrawsResponse holds response from GetSelectorDraws
+message GetSelectorDrawsResponse {
+  // Selector draws
+  repeated massa.model.v1.SlotDraw draws = 1;
+}
+
+// GetStakersRequest holds request from GetStakers
+message GetStakersRequest {
+  // Returns all the stakers that verify all the filters
+  repeated StakersFilter filters = 1;
+}
+
+// Stakers Filter
+message StakersFilter {
+  // Returns all the stakers that verify all the filters
+  oneof filter {
+    // Minimum rolls
+    uint64 min_rolls = 1;
+    // Maximum rolls
+    uint64 max_rolls = 2;
+    // Limit
+    uint64 limit = 3;
+  }
+}
+
+// GetStakersResponse holds response from GetStakers
+message GetStakersResponse {
+  // Stakers
+  repeated massa.model.v1.StakerEntry stakers = 1;
+}
+
+// GetTransactionsThroughputRequest holds request for GetTransactionsThroughput
+message GetTransactionsThroughputRequest {}
+
+// GetTransactionsThroughputResponse holds response from
+// GetTransactionsThroughput
+message GetTransactionsThroughputResponse {
+  // Transactions throughput
+  uint32 throughput = 1;
+}
+
+// Request to atomically execute a batch of execution state queries
+message QueryStateRequest {
+  // Execution queries
+  repeated ExecutionQueryRequestItem queries = 1;
+}
+
+// Query state query item
+message ExecutionQueryRequestItem {
+  oneof request_item {
+    // Checks if address exists (candidate)
+    AddressExistsCandidate address_exists_candidate = 1;
+    // Checks if address exists (final)
+    AddressExistsFinal address_exists_final = 2;
+    // Gets the balance (candidate) of an address
+    AddressBalanceCandidate address_balance_candidate = 3;
+    // Gets the balance (final) of an address
+    AddressBalanceFinal address_balance_final = 4;
+    // Gets the bytecode (candidate) of an address
+    AddressBytecodeCandidate address_bytecode_candidate = 5;
+    // Gets the bytecode (final) of an address
+    AddressBytecodeFinal address_bytecode_final = 6;
+    // Gets the datastore keys (candidate) of an address
+    AddressDatastoreKeysCandidate address_datastore_keys_candidate = 7;
+    // Gets the datastore keys (final) of an address
+    AddressDatastoreKeysFinal address_datastore_keys_final = 8;
+    // Gets a datastore value (candidate) for an address
+    AddressDatastoreValueCandidate address_datastore_value_candidate = 9;
+    // Gets a datastore value (final) for an address
+    AddressDatastoreValueFinal address_datastore_value_final = 10;
+    // Gets the execution status (candidate) for an operation
+    OpExecutionStatusCandidate op_execution_status_candidate = 11;
+    // Gets the execution status (final) for an operation
+    OpExecutionStatusFinal op_execution_status_final = 12;
+    // Gets the execution status (candidate) for a denunciation
+    DenunciationExecutionStatusCandidate denunciation_execution_status_candidate = 13;
+    // Gets the execution status (final) for a denunciation
+    DenunciationExecutionStatusFinal denunciation_execution_status_final = 14;
+    // Gets the roll count (candidate) of an address
+    AddressRollsCandidate address_rolls_candidate = 15;
+    // Gets the roll count (final) of an address
+    AddressRollsFinal address_rolls_final = 16;
+    // Gets the deferred credits (candidate) of an address
+    AddressDeferredCreditsCandidate address_deferred_credits_candidate = 17;
+    // Gets the deferred credits (final) of an address
+    AddressDeferredCreditsFinal address_deferred_credits_final = 18;
+    // Gets all information for a given cycle
+    CycleInfos cycle_infos = 19;
+    // Gets filtered events
+    Events events = 20;
+    // Deferred call quote
+    DeferredCallQuote deferred_call_quote = 21;
+    // Deferred calls info
+    DeferredCallInfo deferred_call_info = 22;
+    // Deferred calls by slot
+    DeferredCallsBySlot deferred_calls_by_slot = 23;
+  }
+}
+
+// Request to check if address exists (candidate)
+message AddressExistsCandidate {
+  // Address to check
+  string address = 1;
+}
+
+// Request to check if address exists (final)
+message AddressExistsFinal {
+  // Address to check
+  string address = 1;
+}
+
+// Request to get the balance (candidate) of an address
+message AddressBalanceCandidate {
+  // Address to query
+  string address = 1;
+}
+
+// Request to get the balance (final) of an address
+message AddressBalanceFinal {
+  // Address to query
+  string address = 1;
+}
+
+// Request to get the bytecode (candidate) of an address
+message AddressBytecodeCandidate {
+  // Address to query
+  string address = 1;
+}
+
+// Request to get the bytecode (final) of an address
+message AddressBytecodeFinal {
+  // Address to query
+  string address = 1;
+}
+
+// Request to get the datastore keys (candidate) of an address
+message AddressDatastoreKeysCandidate {
+  // Address to query
+  string address = 1;
+  // Prefix for the keys
+  bytes prefix = 2;
+  // Key offset for the search
+  google.protobuf.BytesValue start_key = 3;
+  // included start_key
+  google.protobuf.BoolValue inclusive_start_key = 4;
+  // End key for the search
+  google.protobuf.BytesValue end_key = 5;
+  // included end_key
+  google.protobuf.BoolValue inclusive_end_key = 6;
+  // Limit for the number of keys
+  google.protobuf.UInt32Value limit = 7;
+}
+
+// Request to get the datastore keys (final) of an address
+message AddressDatastoreKeysFinal {
+  // Address to query
+  string address = 1;
+  // Prefix for the keys
+  bytes prefix = 2;
+  // Key offset for the search
+  google.protobuf.BytesValue start_key = 3;
+  // included start_key
+  google.protobuf.BoolValue inclusive_start_key = 4;
+  // End key for the search
+  google.protobuf.BytesValue end_key = 5;
+  // included end_key
+  google.protobuf.BoolValue inclusive_end_key = 6;
+  // Limit for the number of keys
+  google.protobuf.UInt32Value limit = 7;
+}
+
+// Request to get a datastore value (candidate) for an address
+message AddressDatastoreValueCandidate {
+  // Address to query
+  string address = 1;
+  // Key for the value
+  bytes key = 2;
+}
+
+// Request to get a datastore value (final) for an address
+message AddressDatastoreValueFinal {
+  // Address to query
+  string address = 1;
+  // Key for the value
+  bytes key = 2;
+}
+
+// Request to get the execution status (candidate) for an operation
+message OpExecutionStatusCandidate {
+  // Operation ID to query
+  string operation_id = 1;
+}
+
+// Request to get the execution status (final) for an operation
+message OpExecutionStatusFinal {
+  // Operation ID to query
+  string operation_id = 1;
+}
+
+// Request to get the execution status (candidate) for a denunciation
+message DenunciationExecutionStatusCandidate {
+  // Denunciation index to query
+  massa.model.v1.DenunciationIndex denunciation_index = 1;
+}
+
+// Request to get the execution status (final) for a denunciation
+message DenunciationExecutionStatusFinal {
+  // Denunciation index to query
+  massa.model.v1.DenunciationIndex denunciation_index = 1;
+}
+
+// Request to get the roll count (candidate) of an address
+message AddressRollsCandidate {
+  // Address to query
+  string address = 1;
+}
+
+// Request to get the roll count (final) of an address
+message AddressRollsFinal {
+  // Address to query
+  string address = 1;
+}
+
+// Request to get the deferred credits (candidate) of an address
+message AddressDeferredCreditsCandidate {
+  // Address to query
+  string address = 1;
+}
+
+// Request to get the deferred credits (final) of an address
+message AddressDeferredCreditsFinal {
+  // Address to query
+  string address = 1;
+}
+
+// Request to get all information for a given cycle
+message CycleInfos {
+  // Cycle to query
+  uint64 cycle = 1;
+  // Addresses to restrict the query (if None, info for all addresses will be
+  // returned)
+  repeated string restrict_to_addresses = 2;
+}
+
+// Request to get filtered events
+message Events {
+  // Returns all the events that verify all the filters
+  repeated ScExecutionEventsFilter filters = 1;
+}
+
+// Deferred call quote
+message DeferredCallQuote {
+  /// target slot
+  massa.model.v1.Slot target_slot = 1;
+  /// max gas requested
+  uint64 max_gas = 2;
+  /// params size in bytes
+  uint64 params_size = 3;
+}
+
+message DeferredCallInfo {
+  string call_id = 1;
+}
+
+message DeferredCallInfoResponse {
+  string call_id = 1;
+  DeferredCallInfoEntry call = 2;
+}
+
+message DeferredCallsBySlot {
+  massa.model.v1.Slot slot = 1;
+}
+
+message DeferredCallsBySlotResponse {
+  massa.model.v1.Slot slot = 1;
+  repeated string call_ids = 2;
+}
+
+message DeferredCallInfoEntry {
+  string sender_address = 1;
+  massa.model.v1.Slot target_slot = 2;
+  string target_address = 3;
+  string target_function = 4;
+  bytes parameters = 5;
+  massa.model.v1.NativeAmount coins = 6;
+  uint64 max_gas = 7;
+  massa.model.v1.NativeAmount fee = 8;
+  bool cancelled = 9;
+}
+
+// deferred call quote response
+message DeferredCallQuoteResponse {
+  // the slot requested
+  massa.model.v1.Slot target_slot = 1;
+  // The gas requested
+  uint64 max_gas_request = 2;
+  // if the quote is available
+  bool available = 3;
+  // The amount
+  massa.model.v1.NativeAmount price = 4;
+}
+
+// Response to atomically execute a batch of execution state queries
+message QueryStateResponse {
+  // Final cursor position
+  massa.model.v1.Slot final_cursor = 1;
+  // Candidate cursor position
+  massa.model.v1.Slot candidate_cursor = 2;
+  // The hash of the XOF final state hash
+  string final_state_fingerprint = 3;
+  // List of execution query response items
+  repeated ExecutionQueryResponse responses = 4;
+}
+
+// Execution state query response
+message ExecutionQueryResponse {
+  // Result or error
+  oneof response {
+    // Execution query response item
+    ExecutionQueryResponseItem result = 1;
+    // Massa error
+    massa.model.v1.Error error = 2;
+  }
+}
+
+// Execution state query response item
+message ExecutionQueryResponseItem {
+  oneof response_item {
+    // Boolean value
+    bool boolean = 1;
+    // Roll counts value
+    uint64 roll_count = 2;
+    // Amount value
+    massa.model.v1.NativeAmount amount = 3;
+    // Bytes value
+    bytes bytes = 4;
+    // Vector of bytes value
+    massa.model.v1.ArrayOfBytesWrapper vec_bytes = 5;
+    // Deferred credits value
+    DeferredCreditsEntryWrapper deferred_credits = 6;
+    // Execution status value
+    ExecutionQueryExecutionStatus execution_status = 7;
+    // Cycle infos value
+    ExecutionQueryCycleInfos cycle_infos = 8;
+    // Events
+    ScOutputEventsWrapper events = 9;
+    // Deferred call quote
+    DeferredCallQuoteResponse deferred_call_quote = 10;
+    // Deferred call info
+    DeferredCallInfoResponse deferred_call_info = 11;
+    // Deferred calls by slot
+    DeferredCallsBySlotResponse deferred_calls_by_slot = 12;
+  }
+}
+
+// Deferred credits entry wrapper
+message DeferredCreditsEntryWrapper {
+  // Deferred credits entry
+  repeated DeferredCreditsEntry entries = 1;
+}
+
+// Deferred credits entry
+message DeferredCreditsEntry {
+  // Slot
+  massa.model.v1.Slot slot = 1;
+  // Amount
+  massa.model.v1.NativeAmount amount = 2;
+}
+
+// Execution status of an operation or denunciation
+enum ExecutionQueryExecutionStatus {
+  EXECUTION_QUERY_EXECUTION_STATUS_UNSPECIFIED = 0; // Default enum value
+  EXECUTION_QUERY_EXECUTION_STATUS_ALREADY_EXECUTED_WITH_SUCCESS = 1; // The operation or denunciation was executed recently with success
+  EXECUTION_QUERY_EXECUTION_STATUS_ALREADY_EXECUTED_WITH_FAILURE = 2; // The operation or denunciation was executed recently with failure
+  EXECUTION_QUERY_EXECUTION_STATUS_EXECUTABLE_OR_EXPIRED = 3; // The operation or denunciation was not executed recently but can
+  // still be executed unless expired
+}
+
+// Cycle information for execution query
+message ExecutionQueryCycleInfos {
+  // Cycle number
+  uint64 cycle = 1;
+  // Whether the cycle is final
+  bool is_final = 2;
+  // Infos for each PoS-participating address among the ones that were asked
+  repeated ExecutionQueryStakerInfoEntry staker_infos = 3;
+}
+
+// Staker information for a given cycle
+message ExecutionQueryStakerInfoEntry {
+  // Address of the staker
+  string address = 1;
+  // Staker info
+  ExecutionQueryStakerInfo info = 2;
+}
+
+// Staker information for execution query
+message ExecutionQueryStakerInfo {
+  // Active roll count
+  uint64 active_rolls = 1;
+  // Production stats
+  ExecutionQueryStakerInfoProductionStatsEntry production_stats = 2;
+}
+
+// ExecutionQueryStakerInfoProductionStats entry
+message ExecutionQueryStakerInfoProductionStatsEntry {
+  // Address of the staker
+  string address = 1;
+  // Production failure
+  ExecutionQueryStakerInfoProductionStats stats = 2;
+}
+
+// Production statistics for staker info in execution query
+message ExecutionQueryStakerInfoProductionStats {
+  // Production successes
+  uint64 block_success_count = 1;
+  // Production failures
+  uint64 block_failure_count = 2;
+}
+
+// ScOutputEvents wrapper
+message ScOutputEventsWrapper {
+  // Events
+  repeated massa.model.v1.ScExecutionEvent events = 1;
+}
+
+// NewBlocksRequest holds request for NewBlocks
+message NewBlocksRequest {
+  // Returns all the blocks that verify all the filters
+  repeated NewBlocksFilter filters = 1;
+}
+
+// NewBlocksServerRequest holds request for unidirectional NewBlocks
+message NewBlocksServerRequest {
+  // Returns all the blocks that verify all the filters
+  repeated NewBlocksFilter filters = 1;
+}
+
+// NewBlocks Filter
+message NewBlocksFilter {
+  // Filter
+  oneof filter {
+    // One of these block ids
+    massa.model.v1.BlockIds block_ids = 1;
+    // One of these creator addresses
+    massa.model.v1.Addresses addresses = 2;
+    // One of these slot ranges (inclusive)
+    massa.model.v1.SlotRange slot_range = 3;
+  }
+}
+
+// NewBlocksResponse holds response from NewBlocks
+message NewBlocksResponse {
+  // Signed block
+  massa.model.v1.SignedBlock signed_block = 1;
+}
+
+// NewBlocksServerResponse holds response from unidirectional NewBlocks
+message NewBlocksServerResponse {
+  // Signed block
+  massa.model.v1.SignedBlock signed_block = 1;
+}
+
+// NewEndorsementsRequest holds request for NewEndorsements
+message NewEndorsementsRequest {
+  // Returns all the endorsements that verify all the filters
+  repeated NewEndorsementsFilter filters = 1;
+}
+
+// NewEndorsementsServerRequest holds request for NewEndorsements
+message NewEndorsementsServerRequest {
+  // Returns all the endorsements that verify all the filters
+  repeated NewEndorsementsFilter filters = 1;
+}
+
+// NewEndorsements Filter
+message NewEndorsementsFilter {
+  // Filter
+  oneof filter {
+    // One of these endorsement ids
+    massa.model.v1.EndorsementIds endorsement_ids = 1;
+    // One of these creator addresses
+    massa.model.v1.Addresses addresses = 2;
+    // One of these block ids
+    massa.model.v1.BlockIds block_ids = 3;
+  }
+}
+
+// NewEndorsementsResponse holds response from NewEndorsements
+message NewEndorsementsResponse {
+  // Signed endorsement
+  massa.model.v1.SignedEndorsement signed_endorsement = 1;
+}
+
+// NewEndorsementsServerResponse holds response from NewEndorsements
+message NewEndorsementsServerResponse {
+  // Signed endorsement
+  massa.model.v1.SignedEndorsement signed_endorsement = 1;
+}
+
+// NewFilledBlocksRequest holds request for NewFilledBlocks
+message NewFilledBlocksRequest {
+  // Returns all the blocks that verify one of the filters
+  repeated NewBlocksFilter filters = 1;
+}
+
+// NewFilledBlocksServerRequest holds request for NewFilledBlocks
+message NewFilledBlocksServerRequest {
+  // Returns all the blocks that verify one of the filters
+  repeated NewBlocksFilter filters = 1;
+}
+
+// NewFilledBlocks Filter
+message NewFilledBlocksFilter {
+  // Filter
+  oneof filter {
+    // One of these block ids
+    massa.model.v1.BlockIds block_ids = 1;
+    // One of these creator addresses
+    massa.model.v1.Addresses addresses = 2;
+    // One of these slot ranges (inclusive)
+    massa.model.v1.SlotRange slot_range = 3;
+  }
+}
+
+// NewFilledBlocksResponse holds response from NewFilledBlocks
+message NewFilledBlocksResponse {
+  // Block with operations content found in the node.
+  massa.model.v1.FilledBlock filled_block = 1;
+}
+
+// NewFilledBlocksServerResponse holds response from NewFilledBlocks
+message NewFilledBlocksServerResponse {
+  // Block with operations content found in the node.
+  massa.model.v1.FilledBlock filled_block = 1;
+}
+
+// NewOperationsRequest holds request for NewOperations
+message NewOperationsRequest {
+  // Returns all the operations that verify all the filters
+  repeated NewOperationsFilter filters = 1;
+}
+
+// NewOperationsRequest holds request for NewOperations
+message NewOperationsServerRequest {
+  // Returns all the operations that verify all the filters
+  repeated NewOperationsFilter filters = 1;
+}
+
+// NewOperations Filter
+message NewOperationsFilter {
+  // Filter
+  oneof filter {
+    // One of the operation ids
+    massa.model.v1.OperationIds operation_ids = 1;
+    // One of these creator addresses
+    massa.model.v1.Addresses addresses = 2;
+    // One of the operation types
+    massa.model.v1.OpTypes operation_types = 3;
+  }
+}
+
+// NewOperationsResponse holds response from NewOperations
+message NewOperationsResponse {
+  // Signed operation
+  massa.model.v1.SignedOperation signed_operation = 1;
+}
+
+// NewOperationsServerResponse holds response from NewOperations
+message NewOperationsServerResponse {
+  // Signed operation
+  massa.model.v1.SignedOperation signed_operation = 1;
+}
+
+message NewTransfersInfoServerRequest {
+  // optional filter address
+  google.protobuf.StringValue address = 1;
+}
+
+message NewTransfersInfoServerResponse {
+  // executed slot
+  massa.model.v1.Slot slot = 1;
+  // timestamp
+  int64 timestamp = 2;
+  // block id
+  google.protobuf.StringValue block_id = 3;
+  // transfers info
+  repeated massa.model.v1.ExecTransferInfo transfers_info = 4;
+  // // reward for block producer
+  // massa.model.v1.TargetAmount block_producer_reward = 1;
+  // // reward for endorsement creator
+  // repeated massa.model.v1.TargetAmount endorsement_creator_rewards = 2;
+  // // reward for endorsement target
+  // massa.model.v1.TargetAmount endorsement_target_reward = 3;
+  // // executed denunciations
+  // repeated massa.model.v1.DenunciationAddress denunciations = 4;
+  // // executed roll buy / roll sell
+  // repeated massa.model.v1.OperationTypeRoll operations = 5;
+  // // executed async messages
+  // repeated massa.model.v1.AsyncMessageExecution async_messages = 6;
+  // // executed deferred calls
+  // repeated massa.model.v1.DeferredCallExecution deferred_calls_messages = 7;
+  // // executed deferred credits
+  // repeated massa.model.v1.TargetAmount deferred_credits_execution = 8;
+  // // executed cancel async messages
+  // repeated massa.model.v1.TargetAmount cancel_async_message_execution = 9;
+  // // executed auto sell roll
+  // repeated massa.model.v1.TargetAmount auto_sell_execution = 10;
+}
+
+// NewSlotExecutionOutputsRequest holds request for NewSlotExecutionOutputs
+message NewSlotExecutionOutputsRequest {
+  // Returns all the slot execution outputs that verify all the filters
+  repeated NewSlotExecutionOutputsFilter filters = 1;
+}
+
+// NewSlotExecutionOutputsServerRequest holds request for
+// NewSlotExecutionOutputs
+message NewSlotExecutionOutputsServerRequest {
+  // Returns all the slot execution outputs that verify all the filters
+  repeated NewSlotExecutionOutputsFilter filters = 1;
+}
+
+// NewSlotExecutionOutputs Filter
+message NewSlotExecutionOutputsFilter {
+  // Filter
+  oneof filter {
+    // Execution output status
+    massa.model.v1.ExecutionOutputStatus status = 1;
+    // Slot range
+    massa.model.v1.SlotRange slot_range = 2;
+    // AsyncPoolChangesFilter
+    AsyncPoolChangesFilter async_pool_changes_filter = 3;
+    // ExecutedDenounciationFilter
+    ExecutedDenounciationFilter executed_denounciation_filter = 4;
+    // Execution event filter
+    ExecutionEventFilter event_filter = 5;
+    // ExecutedOpsChangesFilter
+    ExecutedOpsChangesFilter executed_ops_changes_filter = 6;
+    // LedgerChangesFilter
+    LedgerChangesFilter ledger_changes_filter = 7;
+  }
+}
+
+// AsyncPoolChangesFilter
+message AsyncPoolChangesFilter {
+  // Filter
+  oneof filter {
+    // Do not return any message
+    massa.model.v1.Empty none = 1;
+    // The type of the change
+    massa.model.v1.AsyncPoolChangeType type = 2;
+    // The handler function name within the destination address bytecode
+    string handler = 3;
+    // The address towards which the message is being sent
+    string destination_address = 4;
+    // The address that sent the message
+    string emitter_address = 5;
+    // Boolean that determine if the message can be executed. For messages
+    // without filter this boolean is always true. For messages with filter,
+    // this boolean is true if the filter has been matched between
+    // `validity_start` and current slot.
+    bool can_be_executed = 6;
+  }
+}
+
+// PosChangesFilter
+message PosChangesFilter {
+  // Filter
+  oneof filter {
+    // Do not return any message
+    massa.model.v1.Empty none = 1;
+    // Address for which we have roll changes
+    string address = 2;
+  }
+}
+
+// ExecutionEventFilter
+message ExecutionEventFilter {
+  // Filter
+  oneof filter {
+    // Do not return any message
+    massa.model.v1.Empty none = 1;
+    // Caller address
+    string caller_address = 2;
+    // Emitter address
+    string emitter_address = 3;
+    // Original operation id
+    string original_operation_id = 4;
+    // Whether the event is a failure
+    bool is_failure = 5;
+  }
+}
+
+// ExecutedOpsChangesFilter
+message ExecutedOpsChangesFilter {
+  // Filter
+  oneof filter {
+    // Do not return any message
+    massa.model.v1.Empty none = 1;
+    // Operation id
+    string operation_id = 2;
+  }
+}
+
+// ExecutedDenounciationFilter
+message ExecutedDenounciationFilter {
+  // Filter
+  oneof filter {
+    // Do not return any message
+    massa.model.v1.Empty none = 1;
+  }
+}
+
+// LedgerChangesFilter
+message LedgerChangesFilter {
+  // Filter
+  oneof filter {
+    // Do not return any message
+    massa.model.v1.Empty none = 1;
+    // Address for which we have ledger changes
+    string address = 2;
+  }
+}
+
+// NewSlotExecutionOutputsResponse holds response from NewSlotExecutionOutputs
+message NewSlotExecutionOutputsResponse {
+  // Slot execution output
+  massa.model.v1.SlotExecutionOutput output = 1;
+}
+
+// NewSlotExecutionOutputsServerResponse holds response from
+// NewSlotExecutionOutputs
+message NewSlotExecutionOutputsServerResponse {
+  // Slot execution output
+  massa.model.v1.SlotExecutionOutput output = 1;
+}
+
+// Finality level to filter on in streams
+enum FinalityLevel {
+  // Unspecified (receive both)
+  FINALITY_LEVEL_UNSPECIFIED = 0;
+  // Candidate level
+  FINALITY_LEVEL_CANDIDATE = 1;
+  // Final level
+  FINALITY_LEVEL_FINAL = 2;
+}
+
+// NewSlotABICallStacks request
+message NewSlotABICallStacksRequest {
+  // Finality level to receive informations from
+  FinalityLevel finality_level = 1;
+}
+
+// NewSlotABICallStacks response
+message NewSlotABICallStacksResponse {
+  // Finality level to receive informations from
+  massa.model.v1.Slot slot = 1;
+  // Call stacks for asynchronous execution
+  repeated ASCABICallStack asc_call_stacks = 2;
+  // Call stack for operations
+  repeated OperationABICallStack operation_call_stacks = 3;
+  // Call stack for deferred calls
+  repeated DeferredCallABICallStack deferred_call_stacks = 4;
+}
+
+// NewSlotTransfers request
+message NewSlotTransfersRequest {
+  // Finality level to receive informations from
+  FinalityLevel finality_level = 1;
+}
+
+// NewSlotTransfers response
+message NewSlotTransfersResponse {
+  // Finality level to receive informations from
+  massa.model.v1.Slot slot = 1;
+  // Transfers
+  repeated TransferInfo transfers = 2;
+}
+
+// SendBlocksRequest holds parameters to SendBlocks
+message SendBlocksRequest {
+  // Secure shared block
+  bytes block = 1;
+}
+
+// SendBlocksResponse holds response from SendBlocks
+message SendBlocksResponse {
+  // Block result or a gRPC status
+  oneof result {
+    // Block result
+    string block_id = 1;
+    // Massa error
+    massa.model.v1.Error error = 2;
+  }
+}
+
+// SendEndorsementsRequest holds parameters to SendEndorsements
+message SendEndorsementsRequest {
+  // Secure shared endorsements
+  repeated bytes endorsements = 1;
+}
+
+// SendEndorsementsResponse holds response from SendEndorsements
+message SendEndorsementsResponse {
+  // Endorsement result or gRPC status
+  oneof result {
+    // Endorsement result
+    massa.model.v1.EndorsementIds endorsement_ids = 1;
+    // Massa error
+    massa.model.v1.Error error = 2;
+  }
+}
+
+// SendOperationsRequest holds parameters to SendOperations
+message SendOperationsRequest {
+  // Secured shared operations
+  repeated bytes operations = 1;
+}
+
+// SendOperationsResponse holds response from SendOperations
+message SendOperationsResponse {
+  // Operation result or gRPC status
+  oneof result {
+    // Operation result
+    massa.model.v1.OperationIds operation_ids = 1;
+    // Massa error
+    massa.model.v1.Error error = 2;
+  }
+}
+
+// TransactionsThroughputRequest holds request for TransactionsThroughput
+message TransactionsThroughputRequest {
+  // Timer interval in seconds (Optional). Defaults to 10s
+  google.protobuf.UInt64Value interval = 1;
+}
+
+// TransactionsThroughputServerRequest holds request for TransactionsThroughput
+message TransactionsThroughputServerRequest {
+  // Timer interval in seconds (Optional). Defaults to 10s
+  google.protobuf.UInt64Value interval = 1;
+}
+
+// TransactionsThroughputResponse holds response from TransactionsThroughput
+message TransactionsThroughputResponse {
+  // Transactions throughput per second
+  uint32 throughput = 1;
+}
+
+// TransactionsThroughputServerResponse holds response from
+// TransactionsThroughput
+message TransactionsThroughputServerResponse {
+  // Transactions throughput per second
+  uint32 throughput = 1;
+}
+
+// SearchBlocksRequest holds request for SearchBlocks
+message SearchBlocksRequest {
+  // Returns all the blocks that verify all the filters
+  repeated SearchBlocksFilter filters = 1;
+}
+
+// SearchBlocks Filter
+message SearchBlocksFilter {
+  // Filter
+  oneof filter {
+    // One of these block ids
+    massa.model.v1.BlockIds block_ids = 1;
+    // One of these creator addresses
+    massa.model.v1.Addresses addresses = 2;
+    // One of these slot ranges (inclusive)
+    massa.model.v1.SlotRange slot_range = 3;
+  }
+}
+
+// SearchBlocksResponse holds response from SearchBlocks
+message SearchBlocksResponse {
+  // Information about the blocks
+  repeated massa.model.v1.BlockInfo block_infos = 1;
+}
+
+// SearchEndorsementsRequest holds request for SearchEndorsements
+message SearchEndorsementsRequest {
+  // Returns all the endorsements informations that verify all the filters
+  repeated SearchEndorsementsFilter filters = 1;
+}
+
+// SearchEndorsements Filter
+message SearchEndorsementsFilter {
+  // Filter
+  oneof filter {
+    // One of these endorsement ids
+    massa.model.v1.EndorsementIds endorsement_ids = 1;
+    // One of these creator addresses
+    massa.model.v1.Addresses addresses = 2;
+    // One of these block ids
+    massa.model.v1.BlockIds block_ids = 3;
+  }
+}
+
+// SearchEndorsementsResponse holds response from SearchEndorsements
+message SearchEndorsementsResponse {
+  // Information about the endorsements
+  repeated massa.model.v1.EndorsementInfo endorsement_infos = 1;
+}
+
+// SearchOperationsRequest holds request for SearchOperations
+message SearchOperationsRequest {
+  // Returns all the operations that verify all the filters
+  repeated SearchOperationsFilter filters = 1;
+}
+
+// SearchOperations Filter
+message SearchOperationsFilter {
+  // Filter
+  oneof filter {
+    // One of the operation ids
+    massa.model.v1.OperationIds operation_ids = 1;
+    // One of these creator addresses
+    massa.model.v1.Addresses addresses = 2;
+  }
+}
+
+// SearchOperationsResponse holds response from SearchOperations
+message SearchOperationsResponse {
+  // Information about the operations
+  repeated massa.model.v1.OperationInfo operation_infos = 1;
+}
+
+// GetOperationABICallStacks request
+message GetOperationABICallStacksRequest {
+  // Operations ids to get the call stack from
+  repeated string operation_ids = 1;
+}
+
+// Definition of an ABI call stack element
+message ABICallStackElement {
+  // name of the ABI
+  string name = 1;
+  // Parameters of the ABI
+  repeated string parameters = 2;
+  // Return value of the ABI
+  string return_value = 3;
+}
+
+// Definition of an ABI call stack element that is the 'call' ABI
+message ABICallStackElementCall {
+  // name of the ABI
+  string name = 1;
+  // Parameters of the ABI
+  repeated string parameters = 2;
+  // Calls made within this SC call
+  repeated ABICallStackElementParent sub_calls = 3;
+  // Return value of the ABI
+  string return_value = 4;
+}
+
+// Definition of an ABI call stack element parent
+message ABICallStackElementParent {
+  // Element of the call stack
+  oneof call_stack_element {
+    // Any ABI call that is not the ABI 'call'
+    ABICallStackElement element = 1;
+    // Element that is the ABI 'call'
+    ABICallStackElementCall element_call = 2;
+  }
+}
+
+// Definition of an ABI call stack
+message ABICallStack {
+  // All elements of the call stack
+  repeated ABICallStackElementParent call_stack = 1;
+}
+
+// GetOperationABICallStacks response
+message GetOperationABICallStacksResponse {
+  repeated ABICallStack call_stacks = 1;
+}
+
+// GetSlotABICallStacks request
+message GetSlotABICallStacksRequest {
+  // Slots asked
+  repeated massa.model.v1.Slot slots = 1;
+}
+
+// ABI asynchronous execution call stack
+message ASCABICallStack {
+  // Index of the execution in the slot
+  uint64 index = 1;
+  // Call stack
+  repeated ABICallStackElementParent call_stack = 2;
+}
+
+// Operation execution call stack
+message OperationABICallStack {
+  // Operation id
+  string operation_id = 1;
+  // Call stack
+  repeated ABICallStackElementParent call_stack = 2;
+}
+
+// Operation execution call stack
+message DeferredCallABICallStack {
+  // Deferred call id
+  string deferred_call_id = 1;
+  // Call stack
+  repeated ABICallStackElementParent call_stack = 2;
+}
+
+// Call stack for a slot
+message SlotABICallStacks {
+  // Call stacks for asynchronous execution
+  repeated ASCABICallStack asc_call_stacks = 1;
+  // Call stack for operations
+  repeated OperationABICallStack operation_call_stacks = 2;
+  // Call stacks for deferred calls
+  repeated DeferredCallABICallStack deferred_call_stacks = 3;
+}
+
+// GetSlotABICallStacks response
+message GetSlotABICallStacksResponse {
+  // Call stacks for the slots
+  repeated SlotABICallStacks slot_call_stacks = 1;
+}
+
+// GetSlotTransfersRequest holds request for GetSlotTransfers
+message GetSlotTransfersRequest {
+  // Slot to get the transfers from
+  repeated massa.model.v1.Slot slots = 1;
+}
+
+// Transfer info
+message TransferInfo {
+  // Sender
+  string from = 1;
+  // Receiver
+  string to = 2;
+  // Amount in nMAS
+  uint64 amount = 3;
+  // Operation id or asc index
+  oneof operation_id_or_asc_index {
+    // Operation id
+    string operation_id = 4;
+    // Asynchronous execution index
+    uint64 asc_index = 5;
+    // Deferred call id
+    string deferred_call_id = 6;
+  }
+}
+
+// List of transfers for a slot
+message TransferInfos {
+  // Slot
+  massa.model.v1.Slot slot = 1;
+  // Transfers
+  repeated TransferInfo transfers = 2;
+}
+
+// GetSlotTransfersResponse holds response from GetSlotTransfers
+message GetSlotTransfersResponse {
+  // Transfers for the slot
+  repeated TransferInfos transfer_each_slot = 1;
+}

@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    font-family:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+      Arial, sans-serif;
+  }
+  a {
+    color: theme(colors.accent2);
+  }
+  a:hover {
+    text-decoration: underline;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-panel border border-border rounded-lg p-4;
+  }
+  .btn {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-border bg-panel hover:bg-border text-sm transition-colors;
+  }
+  .input {
+    @apply w-full bg-bg border border-border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent2;
+  }
+  .input:disabled {
+    @apply opacity-60;
+  }
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-mono border;
+  }
+  .badge-final {
+    @apply bg-ok/10 text-ok border-ok/30;
+  }
+  .badge-candidate {
+    @apply bg-warn/10 text-warn border-warn/30;
+  }
+  .badge-miss {
+    @apply bg-muted/10 text-muted border-muted/30;
+  }
+  .mono {
+    @apply font-mono text-sm;
+  }
+  .kv {
+    /* Mobile (<640px): stack label above value so neither column is forced
+       to be vanishingly narrow. From sm: revert to the side-by-side grid
+       with a label column capped to half the panel width to avoid the
+       feedback case "label takes 5 lines while value is cut at 10 chars".
+       The `minmax(0, …)` on the value column lets text break instead of
+       overflowing horizontally. */
+    @apply grid grid-cols-1 sm:grid-cols-[minmax(8rem,max-content)_minmax(0,1fr)] gap-x-4 gap-y-1 sm:gap-y-2 text-sm;
+  }
+  .kv > dt {
+    @apply text-muted text-[11px] sm:text-sm uppercase sm:normal-case tracking-wide sm:tracking-normal mt-2 sm:mt-0;
+  }
+  .kv > dt:first-of-type {
+    @apply mt-0;
+  }
+  .kv > dd {
+    @apply font-mono break-all min-w-0;
+  }
+}

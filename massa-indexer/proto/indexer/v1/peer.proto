@@ -1,0 +1,167 @@
+// Indexer-to-indexer peer protocol.
+//
+// A deliberately narrow surface: every backfill transfer fits in three
+// RPCs. Peer payloads reuse the `Stored*Pb` messages defined in
+// `storage.proto` so a FINAL peer-sent block row can be written to local
+// RocksDB with zero re-encoding.
+//
+// We DO NOT try to mirror massa's internal block/operation protobuf
+// types — that would lock us to a specific node release. Instead, each
+// indexer ships its pre-normalised `Stored*Pb` rows, which are
+// schema-versioned via `cf_meta/schema_version` (bumped on incompatible
+// changes). See `../../../spec.md` §8 for the design rationale.
+//
+// Wire-format note: fields whose value is optional or may be absent are
+// wrapped in an explicit `has_*` boolean (inside the Stored*Pb messages)
+// or left as the scalar default (empty strings / zero lengths).
+
+syntax = "proto3";
+package massa.indexer.v1;
+
+import "indexer/v1/storage.proto";
+
+// -----------------------------------------------------------------------
+// Peer service
+// -----------------------------------------------------------------------
+service Peer {
+  // Cheap health + identity probe. Used at config-load time to fail fast
+  // on network/version mismatches, and during backfill as a "is this peer
+  // still alive" ping.
+  rpc GetHealth(HealthRequest) returns (HealthResponse);
+
+  // Fetch a single FINAL slot's contents. The caller signals which
+  // "parts" it still needs with a bitmask; the peer returns only the
+  // ones present locally. If `final_known == false` the peer doesn't
+  // have final data for that slot yet (the caller should try another
+  // peer or come back later).
+  rpc GetFinalSlot(FinalSlotRequest) returns (FinalSlotResponse);
+
+  // Stream FINAL slots in the closed range [from, to] (server-streaming).
+  // Server ships them in descending order (newest-first). This is the
+  // bulk-backfill fast path; the caller still applies each response via
+  // the same merge logic as `GetFinalSlot`.
+  rpc StreamFinalSlots(StreamFinalSlotsRequest) returns (stream FinalSlotResponse);
+}
+
+// -----------------------------------------------------------------------
+// Health
+// -----------------------------------------------------------------------
+message HealthRequest {}
+
+message HealthResponse {
+  // Opaque, operator-chosen identifier (e.g. hostname). Logged on both
+  // sides to help debugging but has no protocol meaning.
+  string peer_id = 1;
+  // Network guard: peers from a different `network` are rejected by the
+  // caller at handshake time (prevents accidentally crossing a mainnet
+  // indexer with buildnet peers).
+  string network = 2;
+  // `massa-indexer X.Y.Z`
+  string build_version = 3;
+  // Highest FINAL slot the peer has locally (0/0 if it knows nothing).
+  uint64 last_final_period = 4;
+  uint32 last_final_thread = 5;
+  // Millis since UNIX epoch, peer-local wall clock.
+  int64 now_ms = 6;
+  // On-disk schema version the peer speaks (mirrors
+  // `cf_meta/schema_version`). Used by the caller to reject peers whose
+  // storage format it can't decode. 0 means "unknown / pre-schema-v1".
+  uint32 schema_version = 7;
+}
+
+// -----------------------------------------------------------------------
+// Per-slot get
+// -----------------------------------------------------------------------
+
+// Bitmask selecting which parts the caller needs. Server returns only
+// the parts both requested AND present. A response with zero parts means
+// "peer has no FINAL data for this slot".
+message FinalSlotParts {
+  // StoredBlock + its endorsements + its operations (full archival).
+  bool block = 1;
+  // Execution output: executed_op_ids, is_miss, trail hash, sc events.
+  bool exec_output = 2;
+  // Transfers rows for this slot.
+  bool transfers = 3;
+}
+
+message FinalSlotRequest {
+  uint64 period = 1;
+  uint32 thread = 2;
+  FinalSlotParts parts = 3;
+}
+
+message FinalSlotResponse {
+  uint64 period = 1;
+  uint32 thread = 2;
+  // True iff the peer has FINAL-labelled state for this slot.
+  bool final_known = 3;
+  // True iff the peer knows the final slot but it was a miss (no block).
+  // When true, block_* fields are empty.
+  bool is_miss = 4;
+  // Trail hash the peer computed when it first finalised this slot.
+  // Used as a first-final-wins ground truth: callers reject peer patches
+  // whose trail hash disagrees with a local one already on disk.
+  string execution_trail_hash = 5;
+
+  // ----- Parts ------------------------------------------------------
+  // Each part below reuses the exact `Stored*Pb` message defined in
+  // `storage.proto`. The order of `operations` / `endorsements` /
+  // `sc_events` / `transfers` matches local-write order (typically
+  // block insertion / index-in-slot order).
+
+  // Part: block. In proto3, nested messages are already nullable when
+  // decoded via prost (they become `Option<StoredBlockPb>`), so we don't
+  // need an explicit `has_block` flag; an absent `block` simply means
+  // the peer didn't include the block part.
+  StoredBlockPb block = 10;
+  // StoredOperation rows for every op included in `block`.
+  repeated StoredOperationPb operations = 12;
+  // StoredEndorsement rows for endorsements carried by `block`.
+  repeated StoredEndorsementPb endorsements = 13;
+
+  // Part: exec_output.
+  repeated StoredScEventPb sc_events = 20;
+  // Executed op id display strings (mirror SlotState.executed_op_ids).
+  repeated string executed_op_ids = 21;
+  // Mirrors SlotState.sc_event_count; useful as an integrity check
+  // against `sc_events.len()`.
+  uint32 sc_event_count = 22;
+  // Async-pool rows whose `last_slot == (period, thread)`. Shipped with the
+  // `exec_output` part because async-pool changes are produced by the
+  // node's execution stream. See `idx_async_by_last_slot` for the index
+  // that drives this enumeration.
+  repeated StoredAsyncMsgPb async_msgs = 23;
+
+  // Part: transfers.
+  repeated StoredTransferPb transfers = 30;
+  // Deferred-call rows whose `last_slot == (period, thread)`. Shipped with
+  // the `transfers` part because deferred-call state transitions are
+  // derived from the transfer stream (the node proto has no
+  // `deferred_calls_changes` message). Backfilling a slot's transfers
+  // therefore also backfills its deferred-call pool updates. See
+  // `idx_deferred_by_last_slot` for the enumerating index.
+  repeated StoredDeferredCallPb deferred_calls = 31;
+
+  // Optional: final_block_id the peer recorded. Display form. Only
+  // meaningful if the slot was not a miss. Repeats the `id` field stored
+  // inside `block` for convenience.
+  string final_block_id = 50;
+}
+
+// -----------------------------------------------------------------------
+// Stream range
+// -----------------------------------------------------------------------
+
+message StreamFinalSlotsRequest {
+  // Inclusive lower bound (the newest slot the caller already has).
+  // Iteration runs newest-first from `to` down to `from`.
+  uint64 from_period = 1;
+  uint32 from_thread = 2;
+  // Inclusive upper bound.
+  uint64 to_period = 3;
+  uint32 to_thread = 4;
+  FinalSlotParts parts = 5;
+  // Cap on slots returned; server may send fewer. 0 = server default.
+  uint32 limit = 6;
+}

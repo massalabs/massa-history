@@ -1,0 +1,63 @@
+# -----------------------------------------------------------------------------
+# Local-only / legacy trees — never publish (live Massa node checkout, old
+# explorers, legacy AWS block-storer). Units keep these on disk untracked.
+# -----------------------------------------------------------------------------
+/massa/
+/block-explorer-old/
+/massa-graph-old/
+/block-storer/
+
+# -----------------------------------------------------------------------------
+# Build artifacts
+# -----------------------------------------------------------------------------
+**/target/
+**/node_modules/
+**/dist/
+**/dist-*/
+**/dist-root/
+*.tsbuildinfo
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+
+# -----------------------------------------------------------------------------
+# Runtime data — RocksDB, logs, local DB copies (stay on the units)
+# -----------------------------------------------------------------------------
+**/data/
+**/rocksdb/
+**/logs/
+*.log
+*.sst
+*.log.old
+
+# -----------------------------------------------------------------------------
+# Secrets and machine-local overrides (credentials live in systemd
+# EnvironmentFile= on the hosts, never in git)
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+**/*privkey*
+**/*.pem
+**/credentials.json
+**/credentials.toml
+**/.aws/
+**/massa-indexer-legacy
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+.cursor/
+
+# Cargo / npm lockfile backups
+*.orig
+*.bak
+*.bak.*
+
+.git.bak.local
+**/.git.bak.local/

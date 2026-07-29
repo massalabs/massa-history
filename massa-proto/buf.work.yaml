@@ -1,0 +1,6 @@
+version: v1
+directories:
+    - proto/abis
+    - proto/apis
+    - proto/commons
+    - proto/third_party

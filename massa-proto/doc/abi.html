@@ -1,0 +1,4897 @@
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <title>Protocol Documentation</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Ubuntu:400,700,400italic"/>
+    <style>
+      body {
+        width: 60em;
+        margin: 1em auto;
+        color: #222;
+        font-family: "Ubuntu", sans-serif;
+        padding-bottom: 4em;
+      }
+
+      h1 {
+        font-weight: normal;
+        border-bottom: 1px solid #aaa;
+        padding-bottom: 0.5ex;
+      }
+
+      h2 {
+        border-bottom: 1px solid #aaa;
+        padding-bottom: 0.5ex;
+        margin: 1.5em 0;
+      }
+
+      h3 {
+        font-weight: normal;
+        border-bottom: 1px solid #aaa;
+        padding-bottom: 0.5ex;
+      }
+
+      a {
+        text-decoration: none;
+        color: #567e25;
+      }
+
+      table {
+        width: 100%;
+        font-size: 80%;
+        border-collapse: collapse;
+      }
+
+      thead {
+        font-weight: 700;
+        background-color: #dcdcdc;
+      }
+
+      tbody tr:nth-child(even) {
+        background-color: #fbfbfb;
+      }
+
+      td {
+        border: 1px solid #ccc;
+        padding: 0.5ex 2ex;
+      }
+
+      td p {
+        text-indent: 1em;
+        margin: 0;
+      }
+
+      td p:nth-child(1) {
+        text-indent: 0;  
+      }
+
+       
+      .field-table td:nth-child(1) {  
+        width: 10em;
+      }
+      .field-table td:nth-child(2) {  
+        width: 10em;
+      }
+      .field-table td:nth-child(3) {  
+        width: 6em;
+      }
+      .field-table td:nth-child(4) {  
+        width: auto;
+      }
+
+       
+      .extension-table td:nth-child(1) {  
+        width: 10em;
+      }
+      .extension-table td:nth-child(2) {  
+        width: 10em;
+      }
+      .extension-table td:nth-child(3) {  
+        width: 10em;
+      }
+      .extension-table td:nth-child(4) {  
+        width: 5em;
+      }
+      .extension-table td:nth-child(5) {  
+        width: auto;
+      }
+
+       
+      .enum-table td:nth-child(1) {  
+        width: 10em;
+      }
+      .enum-table td:nth-child(2) {  
+        width: 10em;
+      }
+      .enum-table td:nth-child(3) {  
+        width: auto;
+      }
+
+       
+      .scalar-value-types-table tr {
+        height: 3em;
+      }
+
+       
+      #toc-container ul {
+        list-style-type: none;
+        padding-left: 1em;
+        line-height: 180%;
+        margin: 0;
+      }
+      #toc > li > a {
+        font-weight: bold;
+      }
+
+       
+      .file-heading {
+        width: 100%;
+        display: table;
+        border-bottom: 1px solid #aaa;
+        margin: 4em 0 1.5em 0;
+      }
+      .file-heading h2 {
+        border: none;
+        display: table-cell;
+      }
+      .file-heading a {
+        text-align: right;
+        display: table-cell;
+      }
+
+       
+      .badge {
+        width: 1.6em;
+        height: 1.6em;
+        display: inline-block;
+
+        line-height: 1.6em;
+        text-align: center;
+        font-weight: bold;
+        font-size: 60%;
+
+        color: #89ba48;
+        background-color: #dff0c8;
+
+        margin: 0.5ex 1em 0.5ex -1em;
+        border: 1px solid #fbfbfb;
+        border-radius: 1ex;
+      }
+    </style>
+
+    
+    <link rel="stylesheet" type="text/css" href="stylesheet.css"/>
+  </head>
+
+  <body>
+
+    <h1 id="title">Protocol Documentation</h1>
+
+    <h2>Table of Contents</h2>
+
+    <div id="toc-container">
+      <ul id="toc">
+        
+          
+          <li>
+            <a href="#massa%2fabi%2fv1%2fabi.proto">massa/abi/v1/abi.proto</a>
+            <ul>
+              
+                <li>
+                  <a href="#massa.abi.v1.AbiResponse"><span class="badge">M</span>AbiResponse</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.AddNativeAmountRequest"><span class="badge">M</span>AddNativeAmountRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.AddNativeAmountResult"><span class="badge">M</span>AddNativeAmountResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.AddressFromPubKeyRequest"><span class="badge">M</span>AddressFromPubKeyRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.AddressFromPubKeyResult"><span class="badge">M</span>AddressFromPubKeyResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.AppendDsValueRequest"><span class="badge">M</span>AppendDsValueRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.AppendDsValueResult"><span class="badge">M</span>AppendDsValueResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.Base58CheckToBytesRequest"><span class="badge">M</span>Base58CheckToBytesRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.Base58CheckToBytesResult"><span class="badge">M</span>Base58CheckToBytesResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.BytesToBase58CheckRequest"><span class="badge">M</span>BytesToBase58CheckRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.BytesToBase58CheckResult"><span class="badge">M</span>BytesToBase58CheckResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CallRequest"><span class="badge">M</span>CallRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CallResponse"><span class="badge">M</span>CallResponse</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CallerHasWriteAccessRequest"><span class="badge">M</span>CallerHasWriteAccessRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CallerHasWriteAccessResult"><span class="badge">M</span>CallerHasWriteAccessResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.ChainIdRequest"><span class="badge">M</span>ChainIdRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.ChainIdResult"><span class="badge">M</span>ChainIdResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckAddressRequest"><span class="badge">M</span>CheckAddressRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckAddressResult"><span class="badge">M</span>CheckAddressResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckNativeAmountRequest"><span class="badge">M</span>CheckNativeAmountRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckNativeAmountResult"><span class="badge">M</span>CheckNativeAmountResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckPubKeyRequest"><span class="badge">M</span>CheckPubKeyRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckPubKeyResult"><span class="badge">M</span>CheckPubKeyResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckSigRequest"><span class="badge">M</span>CheckSigRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckSigResult"><span class="badge">M</span>CheckSigResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckedAddNativeTimeRequest"><span class="badge">M</span>CheckedAddNativeTimeRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckedAddNativeTimeResult"><span class="badge">M</span>CheckedAddNativeTimeResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckedDivRemNativeTimeRequest"><span class="badge">M</span>CheckedDivRemNativeTimeRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckedDivRemNativeTimeResult"><span class="badge">M</span>CheckedDivRemNativeTimeResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckedScalarDivRemNativeTimeRequest"><span class="badge">M</span>CheckedScalarDivRemNativeTimeRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckedScalarDivRemNativeTimeResult"><span class="badge">M</span>CheckedScalarDivRemNativeTimeResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckedScalarMulNativeTimeRequest"><span class="badge">M</span>CheckedScalarMulNativeTimeRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckedScalarMulNativeTimeResult"><span class="badge">M</span>CheckedScalarMulNativeTimeResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckedSubNativeTimeRequest"><span class="badge">M</span>CheckedSubNativeTimeRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CheckedSubNativeTimeResult"><span class="badge">M</span>CheckedSubNativeTimeResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CompareAddressRequest"><span class="badge">M</span>CompareAddressRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CompareAddressResult"><span class="badge">M</span>CompareAddressResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CompareNativeAmountRequest"><span class="badge">M</span>CompareNativeAmountRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CompareNativeAmountResult"><span class="badge">M</span>CompareNativeAmountResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CompareNativeTimeRequest"><span class="badge">M</span>CompareNativeTimeRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CompareNativeTimeResult"><span class="badge">M</span>CompareNativeTimeResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.ComparePubKeyRequest"><span class="badge">M</span>ComparePubKeyRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.ComparePubKeyResult"><span class="badge">M</span>ComparePubKeyResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CreateScRequest"><span class="badge">M</span>CreateScRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.CreateScResult"><span class="badge">M</span>CreateScResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.DeferredCallCancelRequest"><span class="badge">M</span>DeferredCallCancelRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.DeferredCallCancelResult"><span class="badge">M</span>DeferredCallCancelResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.DeferredCallExistsRequest"><span class="badge">M</span>DeferredCallExistsRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.DeferredCallExistsResult"><span class="badge">M</span>DeferredCallExistsResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.DeferredCallQuoteRequest"><span class="badge">M</span>DeferredCallQuoteRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.DeferredCallQuoteResult"><span class="badge">M</span>DeferredCallQuoteResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.DeferredCallRegisterRequest"><span class="badge">M</span>DeferredCallRegisterRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.DeferredCallRegisterResult"><span class="badge">M</span>DeferredCallRegisterResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.DeleteDsEntryRequest"><span class="badge">M</span>DeleteDsEntryRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.DeleteDsEntryResult"><span class="badge">M</span>DeleteDsEntryResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.DivRemNativeAmountRequest"><span class="badge">M</span>DivRemNativeAmountRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.DivRemNativeAmountResult"><span class="badge">M</span>DivRemNativeAmountResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.DsEntryExistsRequest"><span class="badge">M</span>DsEntryExistsRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.DsEntryExistsResult"><span class="badge">M</span>DsEntryExistsResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.Error"><span class="badge">M</span>Error</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.EvmGetAddressFromPubkeyRequest"><span class="badge">M</span>EvmGetAddressFromPubkeyRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.EvmGetAddressFromPubkeyResult"><span class="badge">M</span>EvmGetAddressFromPubkeyResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.EvmGetPubkeyFromSignatureRequest"><span class="badge">M</span>EvmGetPubkeyFromSignatureRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.EvmGetPubkeyFromSignatureResult"><span class="badge">M</span>EvmGetPubkeyFromSignatureResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.EvmVerifySigRequest"><span class="badge">M</span>EvmVerifySigRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.EvmVerifySigResult"><span class="badge">M</span>EvmVerifySigResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.FunctionExistsRequest"><span class="badge">M</span>FunctionExistsRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.FunctionExistsResult"><span class="badge">M</span>FunctionExistsResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GenerateEventRequest"><span class="badge">M</span>GenerateEventRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GenerateEventResult"><span class="badge">M</span>GenerateEventResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetAddressCategoryRequest"><span class="badge">M</span>GetAddressCategoryRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetAddressCategoryResult"><span class="badge">M</span>GetAddressCategoryResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetAddressVersionRequest"><span class="badge">M</span>GetAddressVersionRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetAddressVersionResult"><span class="badge">M</span>GetAddressVersionResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetBalanceRequest"><span class="badge">M</span>GetBalanceRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetBalanceResult"><span class="badge">M</span>GetBalanceResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetBytecodeRequest"><span class="badge">M</span>GetBytecodeRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetBytecodeResult"><span class="badge">M</span>GetBytecodeResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetCallCoinsRequest"><span class="badge">M</span>GetCallCoinsRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetCallCoinsResult"><span class="badge">M</span>GetCallCoinsResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetCallStackRequest"><span class="badge">M</span>GetCallStackRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetCallStackResult"><span class="badge">M</span>GetCallStackResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetCurrentSlotRequest"><span class="badge">M</span>GetCurrentSlotRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetCurrentSlotResult"><span class="badge">M</span>GetCurrentSlotResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetDsKeysRequest"><span class="badge">M</span>GetDsKeysRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetDsKeysResult"><span class="badge">M</span>GetDsKeysResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetDsValueRequest"><span class="badge">M</span>GetDsValueRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetDsValueResult"><span class="badge">M</span>GetDsValueResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetNativeTimeRequest"><span class="badge">M</span>GetNativeTimeRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetNativeTimeResult"><span class="badge">M</span>GetNativeTimeResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetOpDataRequest"><span class="badge">M</span>GetOpDataRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetOpDataResult"><span class="badge">M</span>GetOpDataResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetOpKeysRequest"><span class="badge">M</span>GetOpKeysRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetOpKeysResult"><span class="badge">M</span>GetOpKeysResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetOriginOperationIdRequest"><span class="badge">M</span>GetOriginOperationIdRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetOriginOperationIdResult"><span class="badge">M</span>GetOriginOperationIdResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetOwnedAddressesRequest"><span class="badge">M</span>GetOwnedAddressesRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetOwnedAddressesResult"><span class="badge">M</span>GetOwnedAddressesResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetPubKeyVersionRequest"><span class="badge">M</span>GetPubKeyVersionRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetPubKeyVersionResult"><span class="badge">M</span>GetPubKeyVersionResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetRemainingGasRequest"><span class="badge">M</span>GetRemainingGasRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetRemainingGasResult"><span class="badge">M</span>GetRemainingGasResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetSignatureVersionRequest"><span class="badge">M</span>GetSignatureVersionRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.GetSignatureVersionResult"><span class="badge">M</span>GetSignatureVersionResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.HashBlake3Request"><span class="badge">M</span>HashBlake3Request</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.HashBlake3Result"><span class="badge">M</span>HashBlake3Result</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.HashSha256Request"><span class="badge">M</span>HashSha256Request</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.HashSha256Result"><span class="badge">M</span>HashSha256Result</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.IsAddressEoaRequest"><span class="badge">M</span>IsAddressEoaRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.IsAddressEoaResult"><span class="badge">M</span>IsAddressEoaResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.Keccak256Request"><span class="badge">M</span>Keccak256Request</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.Keccak256Result"><span class="badge">M</span>Keccak256Result</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.LocalExecutionRequest"><span class="badge">M</span>LocalExecutionRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.LocalExecutionResponse"><span class="badge">M</span>LocalExecutionResponse</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.NativeAmountFromStringRequest"><span class="badge">M</span>NativeAmountFromStringRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.NativeAmountFromStringResult"><span class="badge">M</span>NativeAmountFromStringResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.NativeAmountToStringRequest"><span class="badge">M</span>NativeAmountToStringRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.NativeAmountToStringResult"><span class="badge">M</span>NativeAmountToStringResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.OpEntryExistsRequest"><span class="badge">M</span>OpEntryExistsRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.OpEntryExistsResult"><span class="badge">M</span>OpEntryExistsResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.RespResult"><span class="badge">M</span>RespResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.ScalarDivRemNativeAmountRequest"><span class="badge">M</span>ScalarDivRemNativeAmountRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.ScalarDivRemNativeAmountResult"><span class="badge">M</span>ScalarDivRemNativeAmountResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.ScalarMulNativeAmountRequest"><span class="badge">M</span>ScalarMulNativeAmountRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.ScalarMulNativeAmountResult"><span class="badge">M</span>ScalarMulNativeAmountResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.SendAsyncMessageFilter"><span class="badge">M</span>SendAsyncMessageFilter</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.SendAsyncMessageRequest"><span class="badge">M</span>SendAsyncMessageRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.SendAsyncMessageResult"><span class="badge">M</span>SendAsyncMessageResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.SetBytecodeRequest"><span class="badge">M</span>SetBytecodeRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.SetBytecodeResult"><span class="badge">M</span>SetBytecodeResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.SetDsValueRequest"><span class="badge">M</span>SetDsValueRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.SetDsValueResult"><span class="badge">M</span>SetDsValueResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.SubNativeAmountRequest"><span class="badge">M</span>SubNativeAmountRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.SubNativeAmountResult"><span class="badge">M</span>SubNativeAmountResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.TransferCoinsRequest"><span class="badge">M</span>TransferCoinsRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.TransferCoinsResult"><span class="badge">M</span>TransferCoinsResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.UnsafeRandomRequest"><span class="badge">M</span>UnsafeRandomRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.UnsafeRandomResult"><span class="badge">M</span>UnsafeRandomResult</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.VerifySigRequest"><span class="badge">M</span>VerifySigRequest</a>
+                </li>
+              
+                <li>
+                  <a href="#massa.abi.v1.VerifySigResult"><span class="badge">M</span>VerifySigResult</a>
+                </li>
+              
+              
+              
+              
+            </ul>
+          </li>
+        
+        <li><a href="#scalar-value-types">Scalar Value Types</a></li>
+      </ul>
+    </div>
+
+    
+      
+      <div class="file-heading">
+        <h2 id="massa/abi/v1/abi.proto">massa/abi/v1/abi.proto</h2><a href="#title">Top</a>
+      </div>
+      <p></p>
+
+      
+        <h3 id="massa.abi.v1.AbiResponse">AbiResponse</h3>
+        <p>Generic message that encapsulate response from ABI calls.</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>res</td>
+                  <td><a href="#massa.abi.v1.RespResult">RespResult</a></td>
+                  <td></td>
+                  <td><p>variant for success </p></td>
+                </tr>
+              
+                <tr>
+                  <td>error</td>
+                  <td><a href="#massa.abi.v1.Error">Error</a></td>
+                  <td></td>
+                  <td><p>variant for error </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.AddNativeAmountRequest">AddNativeAmountRequest</h3>
+        <p>Amount addition request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>amount1</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>First amount to add </p></td>
+                </tr>
+              
+                <tr>
+                  <td>amount2</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Second amount to add </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.AddNativeAmountResult">AddNativeAmountResult</h3>
+        <p>Amount addition result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>sum</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Sum of amounts </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.AddressFromPubKeyRequest">AddressFromPubKeyRequest</h3>
+        <p>Address from public key request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>pub_key</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Native public key </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.AddressFromPubKeyResult">AddressFromPubKeyResult</h3>
+        <p>Address from public key result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Address </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.AppendDsValueRequest">AppendDsValueRequest</h3>
+        <p>Append data request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>key</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>key </p></td>
+                </tr>
+              
+                <tr>
+                  <td>value</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>value </p></td>
+                </tr>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td>optional</td>
+                  <td><p>Address to append data for, if none, use current address </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.AppendDsValueResult">AppendDsValueResult</h3>
+        <p>Append data result</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.Base58CheckToBytesRequest">Base58CheckToBytesRequest</h3>
+        <p>base58 to bytes request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>base58_check</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.Base58CheckToBytesResult">Base58CheckToBytesResult</h3>
+        <p>base58 to bytes result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>bytes</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.BytesToBase58CheckRequest">BytesToBase58CheckRequest</h3>
+        <p>bytes to base58 request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>bytes</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.BytesToBase58CheckResult">BytesToBase58CheckResult</h3>
+        <p>bytes to base58 result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>base58_check</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CallRequest">CallRequest</h3>
+        <p>Call SC request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>target_sc_address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Address of the smart contract to call </p></td>
+                </tr>
+              
+                <tr>
+                  <td>target_function_name</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Function to call in the targeted smart contract </p></td>
+                </tr>
+              
+                <tr>
+                  <td>function_arg</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Argument to the function serialized in a byte array. </p></td>
+                </tr>
+              
+                <tr>
+                  <td>call_coins</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>call_coins is the amount of coins to pay for the call </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CallResponse">CallResponse</h3>
+        <p>Call SC response</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>data</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Return_data is the return value of the function </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CallerHasWriteAccessRequest">CallerHasWriteAccessRequest</h3>
+        <p>Caller has write access request</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.CallerHasWriteAccessResult">CallerHasWriteAccessResult</h3>
+        <p>Caller has write access result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>has_write_access</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>Caller has write access </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.ChainIdRequest">ChainIdRequest</h3>
+        <p>Chain id request</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.ChainIdResult">ChainIdResult</h3>
+        <p>Chain id result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>id</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckAddressRequest">CheckAddressRequest</h3>
+        <p>Check address request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>to_check</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Address to check </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckAddressResult">CheckAddressResult</h3>
+        <p>Check address result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>is_valid</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>Is address valid </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckNativeAmountRequest">CheckNativeAmountRequest</h3>
+        <p>Check Amount request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>to_check</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Amount to check </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckNativeAmountResult">CheckNativeAmountResult</h3>
+        <p>Check Amount result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>is_valid</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>Is Amount valid </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckPubKeyRequest">CheckPubKeyRequest</h3>
+        <p>Check PubKey request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>to_check</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>PubKey to check </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckPubKeyResult">CheckPubKeyResult</h3>
+        <p>Check PubKey result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>is_valid</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>Is PubKey valid </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckSigRequest">CheckSigRequest</h3>
+        <p>Check Sig request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>to_check</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Sig to check </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckSigResult">CheckSigResult</h3>
+        <p>Check Sig result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>is_valid</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>Is Sig valid </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckedAddNativeTimeRequest">CheckedAddNativeTimeRequest</h3>
+        <p>Time addition checked request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>left</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>First time to add </p></td>
+                </tr>
+              
+                <tr>
+                  <td>right</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>Second time to add </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckedAddNativeTimeResult">CheckedAddNativeTimeResult</h3>
+        <p>Time addition checked result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>sum</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>Sum of times </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckedDivRemNativeTimeRequest">CheckedDivRemNativeTimeRequest</h3>
+        <p>Time division checked request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>dividend</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>Time to divide </p></td>
+                </tr>
+              
+                <tr>
+                  <td>divisor</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>Divisor to divide by </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckedDivRemNativeTimeResult">CheckedDivRemNativeTimeResult</h3>
+        <p>Time division checked result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>quotient</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Quotient of time and divisor </p></td>
+                </tr>
+              
+                <tr>
+                  <td>remainder</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>Remainder of time and divisor </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckedScalarDivRemNativeTimeRequest">CheckedScalarDivRemNativeTimeRequest</h3>
+        <p>Time scalar divrem checked request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>dividend</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>Time to divide </p></td>
+                </tr>
+              
+                <tr>
+                  <td>divisor</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Divisor to divide by </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckedScalarDivRemNativeTimeResult">CheckedScalarDivRemNativeTimeResult</h3>
+        <p>Time scalar divrem checked result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>quotient</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>Quotient of time and divisor </p></td>
+                </tr>
+              
+                <tr>
+                  <td>remainder</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>Remainder of time and divisor </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckedScalarMulNativeTimeRequest">CheckedScalarMulNativeTimeRequest</h3>
+        <p>Time scalar mult checked request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>time</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>Time to multiply </p></td>
+                </tr>
+              
+                <tr>
+                  <td>coefficient</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Coefficient to multiply by </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckedScalarMulNativeTimeResult">CheckedScalarMulNativeTimeResult</h3>
+        <p>Time scalar mult checked result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>product</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>Product of time and coefficient </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckedSubNativeTimeRequest">CheckedSubNativeTimeRequest</h3>
+        <p>Time subtraction checked request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>left</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>First time to subtract from </p></td>
+                </tr>
+              
+                <tr>
+                  <td>right</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>Second time to subtract </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CheckedSubNativeTimeResult">CheckedSubNativeTimeResult</h3>
+        <p>Time subtraction checked result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>difference</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>Difference of times (left - right) </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CompareAddressRequest">CompareAddressRequest</h3>
+        <p>Compare Address request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>left</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>First address to compare </p></td>
+                </tr>
+              
+                <tr>
+                  <td>right</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Second address to compare </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CompareAddressResult">CompareAddressResult</h3>
+        <p>Compare Address result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>result</td>
+                  <td><a href="#massa.model.v1.ComparisonResult">massa.model.v1.ComparisonResult</a></td>
+                  <td></td>
+                  <td><p>Comparison result </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CompareNativeAmountRequest">CompareNativeAmountRequest</h3>
+        <p>Compare NativeAmount request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>left</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>First amount to compare </p></td>
+                </tr>
+              
+                <tr>
+                  <td>right</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Second amount to compare </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CompareNativeAmountResult">CompareNativeAmountResult</h3>
+        <p>Compare NativeAmount result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>result</td>
+                  <td><a href="#massa.model.v1.ComparisonResult">massa.model.v1.ComparisonResult</a></td>
+                  <td></td>
+                  <td><p>Comparison result </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CompareNativeTimeRequest">CompareNativeTimeRequest</h3>
+        <p>Time comparison request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>left</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>First time to compare </p></td>
+                </tr>
+              
+                <tr>
+                  <td>right</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>Second time to compare </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CompareNativeTimeResult">CompareNativeTimeResult</h3>
+        <p>Time comparison result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>result</td>
+                  <td><a href="#massa.model.v1.ComparisonResult">massa.model.v1.ComparisonResult</a></td>
+                  <td></td>
+                  <td><p>Comparison result </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.ComparePubKeyRequest">ComparePubKeyRequest</h3>
+        <p>Compare PubKey request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>left</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>First public key to compare </p></td>
+                </tr>
+              
+                <tr>
+                  <td>right</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Second public key to compare </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.ComparePubKeyResult">ComparePubKeyResult</h3>
+        <p>Compare PubKey result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>result</td>
+                  <td><a href="#massa.model.v1.ComparisonResult">massa.model.v1.ComparisonResult</a></td>
+                  <td></td>
+                  <td><p>Comparison result </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CreateScRequest">CreateScRequest</h3>
+        <p>Create SC request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>bytecode</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Bytecode is the compiled code of the smart contract </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.CreateScResult">CreateScResult</h3>
+        <p>Create SC result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>sc_address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Address of the just created smart contract </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.DeferredCallCancelRequest">DeferredCallCancelRequest</h3>
+        <p>Deferred call cancel request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>call_id</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td></td>
+                  <td><p>call id </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.DeferredCallCancelResult">DeferredCallCancelResult</h3>
+        <p>Deferred call cancel result</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.DeferredCallExistsRequest">DeferredCallExistsRequest</h3>
+        <p>deferred call exists request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>call_id</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td></td>
+                  <td><p>deferred call id </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.DeferredCallExistsResult">DeferredCallExistsResult</h3>
+        <p>deferred call exists result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>call_exists</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>call exists </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.DeferredCallQuoteRequest">DeferredCallQuoteRequest</h3>
+        <p>Deferred call quote</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>target_slot</td>
+                  <td><a href="#massa.model.v1.Slot">massa.model.v1.Slot</a></td>
+                  <td></td>
+                  <td><p>target slot </p></td>
+                </tr>
+              
+                <tr>
+                  <td>max_gas</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>max gas requested </p></td>
+                </tr>
+              
+                <tr>
+                  <td>params_size</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>params size in bytes </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.DeferredCallQuoteResult">DeferredCallQuoteResult</h3>
+        <p>Deferred call quote result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>available</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>available </p></td>
+                </tr>
+              
+                <tr>
+                  <td>cost</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>cost </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.DeferredCallRegisterRequest">DeferredCallRegisterRequest</h3>
+        <p>deferred call register request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>target_address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>target address </p></td>
+                </tr>
+              
+                <tr>
+                  <td>target_function</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>target function </p></td>
+                </tr>
+              
+                <tr>
+                  <td>target_slot</td>
+                  <td><a href="#massa.model.v1.Slot">massa.model.v1.Slot</a></td>
+                  <td></td>
+                  <td><p>start slot </p></td>
+                </tr>
+              
+                <tr>
+                  <td>max_gas</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>gas requested </p></td>
+                </tr>
+              
+                <tr>
+                  <td>params</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>params of the call </p></td>
+                </tr>
+              
+                <tr>
+                  <td>coins</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>coins </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.DeferredCallRegisterResult">DeferredCallRegisterResult</h3>
+        <p>deferred call register result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>call_id</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td></td>
+                  <td><p>deferred call id </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.DeleteDsEntryRequest">DeleteDsEntryRequest</h3>
+        <p>Delete data store entry request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>key</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>key </p></td>
+                </tr>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td>optional</td>
+                  <td><p>Address to delete data for, if none, use current address </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.DeleteDsEntryResult">DeleteDsEntryResult</h3>
+        <p>Delete data store entry result</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.DivRemNativeAmountRequest">DivRemNativeAmountRequest</h3>
+        <p>Amount division request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>dividend</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Amount to divide </p></td>
+                </tr>
+              
+                <tr>
+                  <td>divisor</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Divisor to divide by </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.DivRemNativeAmountResult">DivRemNativeAmountResult</h3>
+        <p>Amount division result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>quotient</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Quotient of amount and divisor </p></td>
+                </tr>
+              
+                <tr>
+                  <td>remainder</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Remainder of amount and divisor </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.DsEntryExistsRequest">DsEntryExistsRequest</h3>
+        <p>Data store entry exists request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>key</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>key </p></td>
+                </tr>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td>optional</td>
+                  <td><p>Address to check data for, if none, use current address </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.DsEntryExistsResult">DsEntryExistsResult</h3>
+        <p>Data store entry exists result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>has_data</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>has data </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.Error">Error</h3>
+        <p>Error message used in abi Response</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>message</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>a string representing the error </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.EvmGetAddressFromPubkeyRequest">EvmGetAddressFromPubkeyRequest</h3>
+        <p>EVM get address from public key request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>pub_key</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Public key to get address from </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.EvmGetAddressFromPubkeyResult">EvmGetAddressFromPubkeyResult</h3>
+        <p>EVM get address from public key result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Address </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.EvmGetPubkeyFromSignatureRequest">EvmGetPubkeyFromSignatureRequest</h3>
+        <p>EVM get public key from signature request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>hash</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Signed hash to verify </p></td>
+                </tr>
+              
+                <tr>
+                  <td>sig</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Signature to verify </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.EvmGetPubkeyFromSignatureResult">EvmGetPubkeyFromSignatureResult</h3>
+        <p>EVM get public key from signature result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>pub_key</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Public key </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.EvmVerifySigRequest">EvmVerifySigRequest</h3>
+        <p>EVM signature verification request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>sig</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Signature to verify </p></td>
+                </tr>
+              
+                <tr>
+                  <td>message</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Message to verify </p></td>
+                </tr>
+              
+                <tr>
+                  <td>pub_key</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Public key to verify with </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.EvmVerifySigResult">EvmVerifySigResult</h3>
+        <p>EVM signature verification result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>is_verified</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>Verification result </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.FunctionExistsRequest">FunctionExistsRequest</h3>
+        <p>Function exists request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>target_sc_address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Address of the smart contract to call </p></td>
+                </tr>
+              
+                <tr>
+                  <td>function_name</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>The name of the function to check the existance of </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.FunctionExistsResult">FunctionExistsResult</h3>
+        <p>Function exists result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>exists</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>Exists is true if the function exists </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GenerateEventRequest">GenerateEventRequest</h3>
+        <p>Generate event request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>event</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Event </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GenerateEventResult">GenerateEventResult</h3>
+        <p>Generate event resulst</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.GetAddressCategoryRequest">GetAddressCategoryRequest</h3>
+        <p>Get the category of the address request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetAddressCategoryResult">GetAddressCategoryResult</h3>
+        <p>Get the category of the address result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>category</td>
+                  <td><a href="#massa.model.v1.AddressCategory">massa.model.v1.AddressCategory</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetAddressVersionRequest">GetAddressVersionRequest</h3>
+        <p>Get the version of the address request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetAddressVersionResult">GetAddressVersionResult</h3>
+        <p>Get the version of the address result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>version</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetBalanceRequest">GetBalanceRequest</h3>
+        <p>Get balance request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td>optional</td>
+                  <td><p>Address to get balance for, if none, use current address </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetBalanceResult">GetBalanceResult</h3>
+        <p>Get balance result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>balance</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>balance </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetBytecodeRequest">GetBytecodeRequest</h3>
+        <p>Get bytecode request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td>optional</td>
+                  <td><p>Address to get bytecode for, if none, use current address </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetBytecodeResult">GetBytecodeResult</h3>
+        <p>Get bytecode result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>bytecode</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Bytecode </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetCallCoinsRequest">GetCallCoinsRequest</h3>
+        <p>Get call coins request</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.GetCallCoinsResult">GetCallCoinsResult</h3>
+        <p>Get call coins result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>coins</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>coins </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetCallStackRequest">GetCallStackRequest</h3>
+        <p>Get call stack request</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.GetCallStackResult">GetCallStackResult</h3>
+        <p>Get call stack result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>calls</td>
+                  <td><a href="#string">string</a></td>
+                  <td>repeated</td>
+                  <td><p>call stack </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetCurrentSlotRequest">GetCurrentSlotRequest</h3>
+        <p>Get current slot request</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.GetCurrentSlotResult">GetCurrentSlotResult</h3>
+        <p>Get current slot result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>slot</td>
+                  <td><a href="#massa.model.v1.Slot">massa.model.v1.Slot</a></td>
+                  <td></td>
+                  <td><p>Current slot </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetDsKeysRequest">GetDsKeysRequest</h3>
+        <p>Get keys request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>prefix</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>keys prefix </p></td>
+                </tr>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td>optional</td>
+                  <td><p>Address to get keys for </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetDsKeysResult">GetDsKeysResult</h3>
+        <p>Get keys result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>keys</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td>repeated</td>
+                  <td><p>keys </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetDsValueRequest">GetDsValueRequest</h3>
+        <p>Get data request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>key</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>key </p></td>
+                </tr>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td>optional</td>
+                  <td><p>Address to get data for, if none, use current address </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetDsValueResult">GetDsValueResult</h3>
+        <p>Get data result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>value</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>value </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetNativeTimeRequest">GetNativeTimeRequest</h3>
+        <p>Get native time request</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.GetNativeTimeResult">GetNativeTimeResult</h3>
+        <p>Get native time result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>time</td>
+                  <td><a href="#massa.model.v1.NativeTime">massa.model.v1.NativeTime</a></td>
+                  <td></td>
+                  <td><p>Native time </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetOpDataRequest">GetOpDataRequest</h3>
+        <p>Get op data request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>key</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>key </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetOpDataResult">GetOpDataResult</h3>
+        <p>Get op data result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>value</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>value </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetOpKeysRequest">GetOpKeysRequest</h3>
+        <p>Get op keys request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>prefix</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>keys prefix </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetOpKeysResult">GetOpKeysResult</h3>
+        <p>Get op keys result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>keys</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td>repeated</td>
+                  <td><p>keys </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetOriginOperationIdRequest">GetOriginOperationIdRequest</h3>
+        <p>Get origin operation id request</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.GetOriginOperationIdResult">GetOriginOperationIdResult</h3>
+        <p>Get origin operation id result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>operation_id</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td>optional</td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetOwnedAddressesRequest">GetOwnedAddressesRequest</h3>
+        <p>Get owned addresses request</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.GetOwnedAddressesResult">GetOwnedAddressesResult</h3>
+        <p>Get owned addresses result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>addresses</td>
+                  <td><a href="#string">string</a></td>
+                  <td>repeated</td>
+                  <td><p>owned addresses </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetPubKeyVersionRequest">GetPubKeyVersionRequest</h3>
+        <p>Get the version of the public key request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>pub_key</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetPubKeyVersionResult">GetPubKeyVersionResult</h3>
+        <p>Get the version of the public key result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>version</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetRemainingGasRequest">GetRemainingGasRequest</h3>
+        <p>Get remaining gas request</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.GetRemainingGasResult">GetRemainingGasResult</h3>
+        <p>Get remaining gas result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>remaining_gas</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>remaining gas </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetSignatureVersionRequest">GetSignatureVersionRequest</h3>
+        <p>Get the version of the signature request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>signature</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.GetSignatureVersionResult">GetSignatureVersionResult</h3>
+        <p>Get the version of the signature result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>version</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.HashBlake3Request">HashBlake3Request</h3>
+        <p>Blake3 hash request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>data</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Data to hash </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.HashBlake3Result">HashBlake3Result</h3>
+        <p>Blake3 hash result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>hash</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Hash of data </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.HashSha256Request">HashSha256Request</h3>
+        <p>Hash sha256 request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>data</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>data </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.HashSha256Result">HashSha256Result</h3>
+        <p>Hash sha256 result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>hash</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>hash </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.IsAddressEoaRequest">IsAddressEoaRequest</h3>
+        <p>Is address EOA request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Address to check </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.IsAddressEoaResult">IsAddressEoaResult</h3>
+        <p>Is address EOA result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>is_eoa</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>Is address EOA </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.Keccak256Request">Keccak256Request</h3>
+        <p>Keccak256 hash request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>data</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Data to hash </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.Keccak256Result">Keccak256Result</h3>
+        <p>Keccak256 hash result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>hash</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Hash of data </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.LocalExecutionRequest">LocalExecutionRequest</h3>
+        <p>Local execution request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>bytecode</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Bytecode is the compiled code of the smart contract </p></td>
+                </tr>
+              
+                <tr>
+                  <td>target_function_name</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Function to call in the targeted smart contract </p></td>
+                </tr>
+              
+                <tr>
+                  <td>function_arg</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Argument to the function serialized in a byte array. </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.LocalExecutionResponse">LocalExecutionResponse</h3>
+        <p>Local call response</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>data</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Return_data is the return value of the function </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.NativeAmountFromStringRequest">NativeAmountFromStringRequest</h3>
+        <p>Amount from string request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>to_convert</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>String to convert to Amount </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.NativeAmountFromStringResult">NativeAmountFromStringResult</h3>
+        <p>Amount from string result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>converted_amount</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Converted Amount </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.NativeAmountToStringRequest">NativeAmountToStringRequest</h3>
+        <p>Amount to string request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>to_convert</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Amount to convert to string </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.NativeAmountToStringResult">NativeAmountToStringResult</h3>
+        <p>Amount to string result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>converted_amount</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Converted Amount </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.OpEntryExistsRequest">OpEntryExistsRequest</h3>
+        <p>Op entry exists request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>key</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>key </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.OpEntryExistsResult">OpEntryExistsResult</h3>
+        <p>Op entry exists result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>has_key</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>has key </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.RespResult">RespResult</h3>
+        <p>Tips to check for completeness exec:</p><p>`rg message | rg "\{" | rg "Result" | wc -l`</p><p>the given count should be equal to the number of messages in RespResult + 1</p><p>the +1 comes from ResResult itself which is counted above</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>add_native_amount_result</td>
+                  <td><a href="#massa.abi.v1.AddNativeAmountResult">AddNativeAmountResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>address_from_pub_key_result</td>
+                  <td><a href="#massa.abi.v1.AddressFromPubKeyResult">AddressFromPubKeyResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>append_ds_value_result</td>
+                  <td><a href="#massa.abi.v1.AppendDsValueResult">AppendDsValueResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>base58_check_to_bytes_result</td>
+                  <td><a href="#massa.abi.v1.Base58CheckToBytesResult">Base58CheckToBytesResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>bytes_to_base58_check_result</td>
+                  <td><a href="#massa.abi.v1.BytesToBase58CheckResult">BytesToBase58CheckResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>caller_has_write_access_result</td>
+                  <td><a href="#massa.abi.v1.CallerHasWriteAccessResult">CallerHasWriteAccessResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>check_address_result</td>
+                  <td><a href="#massa.abi.v1.CheckAddressResult">CheckAddressResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>check_native_amount_result</td>
+                  <td><a href="#massa.abi.v1.CheckNativeAmountResult">CheckNativeAmountResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>check_pub_key_result</td>
+                  <td><a href="#massa.abi.v1.CheckPubKeyResult">CheckPubKeyResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>check_sig_result</td>
+                  <td><a href="#massa.abi.v1.CheckSigResult">CheckSigResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>checked_add_native_time_result</td>
+                  <td><a href="#massa.abi.v1.CheckedAddNativeTimeResult">CheckedAddNativeTimeResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>checked_div_rem_native_time_result</td>
+                  <td><a href="#massa.abi.v1.CheckedDivRemNativeTimeResult">CheckedDivRemNativeTimeResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>checked_scalar_div_rem_native_time_result</td>
+                  <td><a href="#massa.abi.v1.CheckedScalarDivRemNativeTimeResult">CheckedScalarDivRemNativeTimeResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>checked_scalar_mul_native_time_result</td>
+                  <td><a href="#massa.abi.v1.CheckedScalarMulNativeTimeResult">CheckedScalarMulNativeTimeResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>checked_sub_native_time_result</td>
+                  <td><a href="#massa.abi.v1.CheckedSubNativeTimeResult">CheckedSubNativeTimeResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>compare_address_result</td>
+                  <td><a href="#massa.abi.v1.CompareAddressResult">CompareAddressResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>compare_native_amount_result</td>
+                  <td><a href="#massa.abi.v1.CompareNativeAmountResult">CompareNativeAmountResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>compare_native_time_result</td>
+                  <td><a href="#massa.abi.v1.CompareNativeTimeResult">CompareNativeTimeResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>compare_pub_key_result</td>
+                  <td><a href="#massa.abi.v1.ComparePubKeyResult">ComparePubKeyResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>create_sc_result</td>
+                  <td><a href="#massa.abi.v1.CreateScResult">CreateScResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>delete_ds_entry_result</td>
+                  <td><a href="#massa.abi.v1.DeleteDsEntryResult">DeleteDsEntryResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>div_rem_native_amount_result</td>
+                  <td><a href="#massa.abi.v1.DivRemNativeAmountResult">DivRemNativeAmountResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>ds_entry_exists_result</td>
+                  <td><a href="#massa.abi.v1.DsEntryExistsResult">DsEntryExistsResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>function_exists_result</td>
+                  <td><a href="#massa.abi.v1.FunctionExistsResult">FunctionExistsResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>generate_event_result</td>
+                  <td><a href="#massa.abi.v1.GenerateEventResult">GenerateEventResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_address_category_result</td>
+                  <td><a href="#massa.abi.v1.GetAddressCategoryResult">GetAddressCategoryResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_address_version_result</td>
+                  <td><a href="#massa.abi.v1.GetAddressVersionResult">GetAddressVersionResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_balance_result</td>
+                  <td><a href="#massa.abi.v1.GetBalanceResult">GetBalanceResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_bytecode_result</td>
+                  <td><a href="#massa.abi.v1.GetBytecodeResult">GetBytecodeResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_call_coins_result</td>
+                  <td><a href="#massa.abi.v1.GetCallCoinsResult">GetCallCoinsResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_call_stack_result</td>
+                  <td><a href="#massa.abi.v1.GetCallStackResult">GetCallStackResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_current_slot_result</td>
+                  <td><a href="#massa.abi.v1.GetCurrentSlotResult">GetCurrentSlotResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_ds_keys_result</td>
+                  <td><a href="#massa.abi.v1.GetDsKeysResult">GetDsKeysResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_ds_value_result</td>
+                  <td><a href="#massa.abi.v1.GetDsValueResult">GetDsValueResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_native_time_result</td>
+                  <td><a href="#massa.abi.v1.GetNativeTimeResult">GetNativeTimeResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_op_data_result</td>
+                  <td><a href="#massa.abi.v1.GetOpDataResult">GetOpDataResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_op_keys_result</td>
+                  <td><a href="#massa.abi.v1.GetOpKeysResult">GetOpKeysResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_origin_operation_id_result</td>
+                  <td><a href="#massa.abi.v1.GetOriginOperationIdResult">GetOriginOperationIdResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_owned_addresses_result</td>
+                  <td><a href="#massa.abi.v1.GetOwnedAddressesResult">GetOwnedAddressesResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_pub_key_version_result</td>
+                  <td><a href="#massa.abi.v1.GetPubKeyVersionResult">GetPubKeyVersionResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_remaining_gas_result</td>
+                  <td><a href="#massa.abi.v1.GetRemainingGasResult">GetRemainingGasResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>get_signature_version_result</td>
+                  <td><a href="#massa.abi.v1.GetSignatureVersionResult">GetSignatureVersionResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>hash_blake3_result</td>
+                  <td><a href="#massa.abi.v1.HashBlake3Result">HashBlake3Result</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>hash_sha256_result</td>
+                  <td><a href="#massa.abi.v1.HashSha256Result">HashSha256Result</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>op_entry_exists_result</td>
+                  <td><a href="#massa.abi.v1.OpEntryExistsResult">OpEntryExistsResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>keccak256_result</td>
+                  <td><a href="#massa.abi.v1.Keccak256Result">Keccak256Result</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>local_execution_response</td>
+                  <td><a href="#massa.abi.v1.LocalExecutionResponse">LocalExecutionResponse</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>native_amount_from_string_result</td>
+                  <td><a href="#massa.abi.v1.NativeAmountFromStringResult">NativeAmountFromStringResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>native_amount_to_string_result</td>
+                  <td><a href="#massa.abi.v1.NativeAmountToStringResult">NativeAmountToStringResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>scalar_div_rem_native_amount_result</td>
+                  <td><a href="#massa.abi.v1.ScalarDivRemNativeAmountResult">ScalarDivRemNativeAmountResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>scalar_mul_native_amount_result</td>
+                  <td><a href="#massa.abi.v1.ScalarMulNativeAmountResult">ScalarMulNativeAmountResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>send_async_message_result</td>
+                  <td><a href="#massa.abi.v1.SendAsyncMessageResult">SendAsyncMessageResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>set_bytecode_result</td>
+                  <td><a href="#massa.abi.v1.SetBytecodeResult">SetBytecodeResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>set_ds_value_result</td>
+                  <td><a href="#massa.abi.v1.SetDsValueResult">SetDsValueResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>sub_native_amount_result</td>
+                  <td><a href="#massa.abi.v1.SubNativeAmountResult">SubNativeAmountResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>transfer_coins_result</td>
+                  <td><a href="#massa.abi.v1.TransferCoinsResult">TransferCoinsResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>unsafe_random_result</td>
+                  <td><a href="#massa.abi.v1.UnsafeRandomResult">UnsafeRandomResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>evm_verify_sig_result</td>
+                  <td><a href="#massa.abi.v1.EvmVerifySigResult">EvmVerifySigResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>verify_sig_result</td>
+                  <td><a href="#massa.abi.v1.VerifySigResult">VerifySigResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>evm_get_address_from_pubkey_result</td>
+                  <td><a href="#massa.abi.v1.EvmGetAddressFromPubkeyResult">EvmGetAddressFromPubkeyResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>evm_get_pubkey_from_signature_result</td>
+                  <td><a href="#massa.abi.v1.EvmGetPubkeyFromSignatureResult">EvmGetPubkeyFromSignatureResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>is_address_eoa_result</td>
+                  <td><a href="#massa.abi.v1.IsAddressEoaResult">IsAddressEoaResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>chain_id_result</td>
+                  <td><a href="#massa.abi.v1.ChainIdResult">ChainIdResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>deferred_call_quote_result</td>
+                  <td><a href="#massa.abi.v1.DeferredCallQuoteResult">DeferredCallQuoteResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>deferred_call_exists_result</td>
+                  <td><a href="#massa.abi.v1.DeferredCallExistsResult">DeferredCallExistsResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>deferred_call_register_result</td>
+                  <td><a href="#massa.abi.v1.DeferredCallRegisterResult">DeferredCallRegisterResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+                <tr>
+                  <td>deferred_call_cancel_result</td>
+                  <td><a href="#massa.abi.v1.DeferredCallCancelResult">DeferredCallCancelResult</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.ScalarDivRemNativeAmountRequest">ScalarDivRemNativeAmountRequest</h3>
+        <p>Amount division by scalar request</p><p>Try to compute quotient = dividend / divisor</p><p>Fails if divisor == 0</p><p>Fails if underflow</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>dividend</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Amount to divide </p></td>
+                </tr>
+              
+                <tr>
+                  <td>divisor</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Divisor to divide by </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.ScalarDivRemNativeAmountResult">ScalarDivRemNativeAmountResult</h3>
+        <p>Amount division by scalar result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>quotient</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Quotient of amount and divisor </p></td>
+                </tr>
+              
+                <tr>
+                  <td>remainder</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Remainder of amount and divisor </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.ScalarMulNativeAmountRequest">ScalarMulNativeAmountRequest</h3>
+        <p>Amount multiplication request</p><p>Try to compute product = amount * coefficient (fail if overflow)</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>amount</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Amount to multiply </p></td>
+                </tr>
+              
+                <tr>
+                  <td>coefficient</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Coefficient to multiply by </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.ScalarMulNativeAmountResult">ScalarMulNativeAmountResult</h3>
+        <p>Amount multiplication result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>product</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Product of amount and coefficient </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.SendAsyncMessageFilter">SendAsyncMessageFilter</h3>
+        <p>Send async message request filter</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>target_address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Target address </p></td>
+                </tr>
+              
+                <tr>
+                  <td>target_key</td>
+                  <td><a href="#google.protobuf.BytesValue">google.protobuf.BytesValue</a></td>
+                  <td></td>
+                  <td><p>Target key </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.SendAsyncMessageRequest">SendAsyncMessageRequest</h3>
+        <p>Send async message request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>target_address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Target address </p></td>
+                </tr>
+              
+                <tr>
+                  <td>target_handler</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Target handler (function name) </p></td>
+                </tr>
+              
+                <tr>
+                  <td>validity_start</td>
+                  <td><a href="#massa.model.v1.Slot">massa.model.v1.Slot</a></td>
+                  <td></td>
+                  <td><p>Start slot for the message execution </p></td>
+                </tr>
+              
+                <tr>
+                  <td>validity_end</td>
+                  <td><a href="#massa.model.v1.Slot">massa.model.v1.Slot</a></td>
+                  <td></td>
+                  <td><p>End slot for the message execution </p></td>
+                </tr>
+              
+                <tr>
+                  <td>execution_gas</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Gas given for the execution </p></td>
+                </tr>
+              
+                <tr>
+                  <td>raw_fee</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Message fee </p></td>
+                </tr>
+              
+                <tr>
+                  <td>raw_coins</td>
+                  <td><a href="#uint64">uint64</a></td>
+                  <td></td>
+                  <td><p>Coins sent to the execution context </p></td>
+                </tr>
+              
+                <tr>
+                  <td>data</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Message data </p></td>
+                </tr>
+              
+                <tr>
+                  <td>filter</td>
+                  <td><a href="#massa.abi.v1.SendAsyncMessageFilter">SendAsyncMessageFilter</a></td>
+                  <td></td>
+                  <td><p>Filter for the message </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.SendAsyncMessageResult">SendAsyncMessageResult</h3>
+        <p>Send async message result</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.SetBytecodeRequest">SetBytecodeRequest</h3>
+        <p>Set bytecode request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>bytecode</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Bytecode </p></td>
+                </tr>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td>optional</td>
+                  <td><p>Address to set bytecode for, if none, use current address </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.SetBytecodeResult">SetBytecodeResult</h3>
+        <p>Set bytecode result</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.SetDsValueRequest">SetDsValueRequest</h3>
+        <p>Set data store value request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>key</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>key </p></td>
+                </tr>
+              
+                <tr>
+                  <td>value</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>value </p></td>
+                </tr>
+              
+                <tr>
+                  <td>address</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td>optional</td>
+                  <td><p>Address to set data for, if none, use current address </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.SetDsValueResult">SetDsValueResult</h3>
+        <p>Set data store value result</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.SubNativeAmountRequest">SubNativeAmountRequest</h3>
+        <p>Amount subtraction request</p><p>try to compute difference = left - right</p><p>fails if right > left</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>left</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>First amount to subtract from </p></td>
+                </tr>
+              
+                <tr>
+                  <td>right</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Second amount to subtract </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.SubNativeAmountResult">SubNativeAmountResult</h3>
+        <p>Amount subtraction result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>difference</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>Difference of amounts (left - right) </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.TransferCoinsRequest">TransferCoinsRequest</h3>
+        <p>Transfer coins request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>target_address</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>The address of the recipient </p></td>
+                </tr>
+              
+                <tr>
+                  <td>amount_to_transfer</td>
+                  <td><a href="#massa.model.v1.NativeAmount">massa.model.v1.NativeAmount</a></td>
+                  <td></td>
+                  <td><p>The amount of coins to transfer </p></td>
+                </tr>
+              
+                <tr>
+                  <td>sender_address</td>
+                  <td><a href="#google.protobuf.StringValue">google.protobuf.StringValue</a></td>
+                  <td>optional</td>
+                  <td><p>The address of the sender, if none, use current address </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.TransferCoinsResult">TransferCoinsResult</h3>
+        <p>Transfer coin result</p>
+
+        
+
+        
+      
+        <h3 id="massa.abi.v1.UnsafeRandomRequest">UnsafeRandomRequest</h3>
+        <p>Unsafe random request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>num_bytes</td>
+                  <td><a href="#uint32">uint32</a></td>
+                  <td></td>
+                  <td><p> </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.UnsafeRandomResult">UnsafeRandomResult</h3>
+        <p>Unsafe random result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>random_bytes</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Random bytes generated </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.VerifySigRequest">VerifySigRequest</h3>
+        <p>Verify Sig request</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>sig</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Signature to verify </p></td>
+                </tr>
+              
+                <tr>
+                  <td>message</td>
+                  <td><a href="#bytes">bytes</a></td>
+                  <td></td>
+                  <td><p>Message to verify </p></td>
+                </tr>
+              
+                <tr>
+                  <td>pub_key</td>
+                  <td><a href="#string">string</a></td>
+                  <td></td>
+                  <td><p>Public key to verify with </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+        <h3 id="massa.abi.v1.VerifySigResult">VerifySigResult</h3>
+        <p>Verify Sig result</p>
+
+        
+          <table class="field-table">
+            <thead>
+              <tr><td>Field</td><td>Type</td><td>Label</td><td>Description</td></tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td>is_verified</td>
+                  <td><a href="#bool">bool</a></td>
+                  <td></td>
+                  <td><p>Verification result </p></td>
+                </tr>
+              
+            </tbody>
+          </table>
+
+          
+
+        
+      
+
+      
+
+      
+
+      
+    
+
+    <h2 id="scalar-value-types">Scalar Value Types</h2>
+    <table class="scalar-value-types-table">
+      <thead>
+        <tr><td>.proto Type</td><td>Notes</td><td>C++</td><td>Java</td><td>Python</td><td>Go</td><td>C#</td><td>PHP</td><td>Ruby</td></tr>
+      </thead>
+      <tbody>
+        
+          <tr id="double">
+            <td>double</td>
+            <td></td>
+            <td>double</td>
+            <td>double</td>
+            <td>float</td>
+            <td>float64</td>
+            <td>double</td>
+            <td>float</td>
+            <td>Float</td>
+          </tr>
+        
+          <tr id="float">
+            <td>float</td>
+            <td></td>
+            <td>float</td>
+            <td>float</td>
+            <td>float</td>
+            <td>float32</td>
+            <td>float</td>
+            <td>float</td>
+            <td>Float</td>
+          </tr>
+        
+          <tr id="int32">
+            <td>int32</td>
+            <td>Uses variable-length encoding. Inefficient for encoding negative numbers – if your field is likely to have negative values, use sint32 instead.</td>
+            <td>int32</td>
+            <td>int</td>
+            <td>int</td>
+            <td>int32</td>
+            <td>int</td>
+            <td>integer</td>
+            <td>Bignum or Fixnum (as required)</td>
+          </tr>
+        
+          <tr id="int64">
+            <td>int64</td>
+            <td>Uses variable-length encoding. Inefficient for encoding negative numbers – if your field is likely to have negative values, use sint64 instead.</td>
+            <td>int64</td>
+            <td>long</td>
+            <td>int/long</td>
+            <td>int64</td>
+            <td>long</td>
+            <td>integer/string</td>
+            <td>Bignum</td>
+          </tr>
+        
+          <tr id="uint32">
+            <td>uint32</td>
+            <td>Uses variable-length encoding.</td>
+            <td>uint32</td>
+            <td>int</td>
+            <td>int/long</td>
+            <td>uint32</td>
+            <td>uint</td>
+            <td>integer</td>
+            <td>Bignum or Fixnum (as required)</td>
+          </tr>
+        
+          <tr id="uint64">
+            <td>uint64</td>
+            <td>Uses variable-length encoding.</td>
+            <td>uint64</td>
+            <td>long</td>
+            <td>int/long</td>
+            <td>uint64</td>
+            <td>ulong</td>
+            <td>integer/string</td>
+            <td>Bignum or Fixnum (as required)</td>
+          </tr>
+        
+          <tr id="sint32">
+            <td>sint32</td>
+            <td>Uses variable-length encoding. Signed int value. These more efficiently encode negative numbers than regular int32s.</td>
+            <td>int32</td>
+            <td>int</td>
+            <td>int</td>
+            <td>int32</td>
+            <td>int</td>
+            <td>integer</td>
+            <td>Bignum or Fixnum (as required)</td>
+          </tr>
+        
+          <tr id="sint64">
+            <td>sint64</td>
+            <td>Uses variable-length encoding. Signed int value. These more efficiently encode negative numbers than regular int64s.</td>
+            <td>int64</td>
+            <td>long</td>
+            <td>int/long</td>
+            <td>int64</td>
+            <td>long</td>
+            <td>integer/string</td>
+            <td>Bignum</td>
+          </tr>
+        
+          <tr id="fixed32">
+            <td>fixed32</td>
+            <td>Always four bytes. More efficient than uint32 if values are often greater than 2^28.</td>
+            <td>uint32</td>
+            <td>int</td>
+            <td>int</td>
+            <td>uint32</td>
+            <td>uint</td>
+            <td>integer</td>
+            <td>Bignum or Fixnum (as required)</td>
+          </tr>
+        
+          <tr id="fixed64">
+            <td>fixed64</td>
+            <td>Always eight bytes. More efficient than uint64 if values are often greater than 2^56.</td>
+            <td>uint64</td>
+            <td>long</td>
+            <td>int/long</td>
+            <td>uint64</td>
+            <td>ulong</td>
+            <td>integer/string</td>
+            <td>Bignum</td>
+          </tr>
+        
+          <tr id="sfixed32">
+            <td>sfixed32</td>
+            <td>Always four bytes.</td>
+            <td>int32</td>
+            <td>int</td>
+            <td>int</td>
+            <td>int32</td>
+            <td>int</td>
+            <td>integer</td>
+            <td>Bignum or Fixnum (as required)</td>
+          </tr>
+        
+          <tr id="sfixed64">
+            <td>sfixed64</td>
+            <td>Always eight bytes.</td>
+            <td>int64</td>
+            <td>long</td>
+            <td>int/long</td>
+            <td>int64</td>
+            <td>long</td>
+            <td>integer/string</td>
+            <td>Bignum</td>
+          </tr>
+        
+          <tr id="bool">
+            <td>bool</td>
+            <td></td>
+            <td>bool</td>
+            <td>boolean</td>
+            <td>boolean</td>
+            <td>bool</td>
+            <td>bool</td>
+            <td>boolean</td>
+            <td>TrueClass/FalseClass</td>
+          </tr>
+        
+          <tr id="string">
+            <td>string</td>
+            <td>A string must always contain UTF-8 encoded or 7-bit ASCII text.</td>
+            <td>string</td>
+            <td>String</td>
+            <td>str/unicode</td>
+            <td>string</td>
+            <td>string</td>
+            <td>string</td>
+            <td>String (UTF-8)</td>
+          </tr>
+        
+          <tr id="bytes">
+            <td>bytes</td>
+            <td>May contain any arbitrary sequence of bytes.</td>
+            <td>string</td>
+            <td>ByteString</td>
+            <td>str</td>
+            <td>[]byte</td>
+            <td>ByteString</td>
+            <td>string</td>
+            <td>String (ASCII-8BIT)</td>
+          </tr>
+        
+      </tbody>
+    </table>
+  </body>
+</html>
+

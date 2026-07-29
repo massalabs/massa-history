@@ -1,0 +1,35 @@
+# Local dev config for running the indexer against the node on 127.0.0.1:33037.
+# This is the default config path used by `massa-indexer serve`.
+
+[general]
+network = "mainnet"
+
+[node]
+grpc_url = "http://127.0.0.1:33037"
+connect_timeout_ms = 5000
+keepalive_ms = 15000
+
+[db]
+path = "./data/rocksdb"
+compression = "lz4"
+write_buffer_size_mb = 64
+
+[rest]
+bind = "127.0.0.1:8080"
+cors = ["*"]
+sse_ring_buffer_size = 10000
+sse_heartbeat_secs = 20
+# Pagination is strictly cursor-based: callers pass `cursor=<opaque>` to
+# resume where the previous response stopped. `max_page_size` is hard-capped
+# server-side at 100 so a single scan is always bounded; larger result sets
+# are traversed by following the `cursor_next` token returned in each page.
+default_page_size = 25
+max_page_size = 100
+
+# Per-stream ingestion toggles. Disabled streams are not subscribed and are
+# skipped by SlotCompleteness / backfill so they don't leave slots pending
+# forever. Defaults (if the table is omitted): all three on.
+[streams]
+filled_blocks          = true
+slot_execution_outputs = true
+transfers              = true

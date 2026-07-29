@@ -1,0 +1,993 @@
+// Copyright (c) 2023 MASSA LABS <info@massa.net>
+
+syntax = "proto3";
+package massa.abi.v1;
+
+import "google/protobuf/wrappers.proto";
+import "massa/model/v1/address.proto";
+import "massa/model/v1/amount.proto";
+import "massa/model/v1/commons.proto";
+import "massa/model/v1/slot.proto";
+import "massa/model/v1/time.proto";
+
+option csharp_namespace = "Com.Massa.Abi.V1";
+option go_package = "github.com/massalabs/massa/abi/v1;v1";
+option java_multiple_files = true;
+option java_package = "com.massa.abi.v1";
+option objc_class_prefix = "MABI";
+option php_namespace = "Com\\Massa\\Abi\\V1";
+option ruby_package = "Com::Massa::Abi::V1";
+option swift_prefix = "MABI";
+
+// Error message used in abi Response
+message Error {
+  // a string representing the error
+  string message = 1;
+}
+
+// Create SC request
+message CreateScRequest {
+  // Bytecode is the compiled code of the smart contract
+  bytes bytecode = 1;
+}
+
+// Create SC result
+message CreateScResult {
+  // Address of the just created smart contract
+  string sc_address = 1;
+}
+
+// Call SC request
+message CallRequest {
+  // Address of the smart contract to call
+  string target_sc_address = 1;
+  // Function to call in the targeted smart contract
+  string target_function_name = 2;
+  // Argument to the function serialized in a byte array.
+  bytes function_arg = 3;
+  // call_coins is the amount of coins to pay for the call
+  massa.model.v1.NativeAmount call_coins = 4;
+}
+
+// Call SC response
+message CallResponse {
+  // Return_data is the return value of the function
+  bytes data = 1;
+}
+
+// Local execution request
+message LocalExecutionRequest {
+  // Bytecode is the compiled code of the smart contract
+  bytes bytecode = 1;
+  // Function to call in the targeted smart contract
+  string target_function_name = 2;
+  // Argument to the function serialized in a byte array.
+  bytes function_arg = 3;
+}
+
+// Local call response
+message LocalExecutionResponse {
+  // Return_data is the return value of the function
+  bytes data = 1;
+}
+
+// Generate event request
+message GenerateEventRequest {
+  // Event
+  bytes event = 1;
+}
+
+// Generate event resulst
+message GenerateEventResult {}
+
+// Transfer coins request
+message TransferCoinsRequest {
+  // The address of the recipient
+  string target_address = 1;
+  // The amount of coins to transfer
+  massa.model.v1.NativeAmount amount_to_transfer = 2;
+  // The address of the sender, if none, use current address
+  optional google.protobuf.StringValue sender_address = 3;
+}
+
+// Transfer coin result
+message TransferCoinsResult {}
+
+// Function exists request
+message FunctionExistsRequest {
+  // Address of the smart contract to call
+  string target_sc_address = 1;
+  // The name of the function to check the existance of
+  string function_name = 2;
+}
+
+// Function exists result
+message FunctionExistsResult {
+  // Exists is true if the function exists
+  bool exists = 1;
+}
+
+// Message returned in case of success of an ABI call.
+// See the documentation of the specific result for the meaning of the fields.
+// Call RespResult because Result will conflict with the Result type in Rust
+// data MUST have the same name as they type in Rust they are converted to type
+
+// Tips to check for completeness exec:
+// `rg message | rg "\{" | rg "Result" | wc -l`
+// the given count should be equal to the number of messages in RespResult + 1
+// the +1 comes from ResResult itself which is counted above
+message RespResult {
+  oneof res {
+    AddNativeAmountResult add_native_amount_result = 1;
+    AddressFromPubKeyResult address_from_pub_key_result = 2;
+    AppendDsValueResult append_ds_value_result = 3;
+    Base58CheckToBytesResult base58_check_to_bytes_result = 4;
+    BytesToBase58CheckResult bytes_to_base58_check_result = 5;
+    CallerHasWriteAccessResult caller_has_write_access_result = 6;
+    CheckAddressResult check_address_result = 7;
+    CheckNativeAmountResult check_native_amount_result = 8;
+    CheckPubKeyResult check_pub_key_result = 9;
+    CheckSigResult check_sig_result = 10;
+    CheckedAddNativeTimeResult checked_add_native_time_result = 11;
+    CheckedDivRemNativeTimeResult checked_div_rem_native_time_result = 12;
+    CheckedScalarDivRemNativeTimeResult checked_scalar_div_rem_native_time_result = 13;
+    CheckedScalarMulNativeTimeResult checked_scalar_mul_native_time_result = 14;
+    CheckedSubNativeTimeResult checked_sub_native_time_result = 15;
+    CompareAddressResult compare_address_result = 16;
+    CompareNativeAmountResult compare_native_amount_result = 17;
+    CompareNativeTimeResult compare_native_time_result = 18;
+    ComparePubKeyResult compare_pub_key_result = 19;
+    CreateScResult create_sc_result = 20;
+    DeleteDsEntryResult delete_ds_entry_result = 21;
+    DivRemNativeAmountResult div_rem_native_amount_result = 22;
+    DsEntryExistsResult ds_entry_exists_result = 23;
+    FunctionExistsResult function_exists_result = 24;
+    GenerateEventResult generate_event_result = 25;
+    GetAddressCategoryResult get_address_category_result = 26;
+    GetAddressVersionResult get_address_version_result = 27;
+    GetBalanceResult get_balance_result = 28;
+    GetBytecodeResult get_bytecode_result = 29;
+    GetCallCoinsResult get_call_coins_result = 30;
+    GetCallStackResult get_call_stack_result = 31;
+    GetCurrentSlotResult get_current_slot_result = 32;
+    GetDsKeysResult get_ds_keys_result = 33;
+    GetDsValueResult get_ds_value_result = 34;
+    GetNativeTimeResult get_native_time_result = 35;
+    GetOpDataResult get_op_data_result = 36;
+    GetOpKeysResult get_op_keys_result = 37;
+    GetOriginOperationIdResult get_origin_operation_id_result = 38;
+    GetOwnedAddressesResult get_owned_addresses_result = 39;
+    GetPubKeyVersionResult get_pub_key_version_result = 40;
+    GetRemainingGasResult get_remaining_gas_result = 41;
+    GetSignatureVersionResult get_signature_version_result = 42;
+    HashBlake3Result hash_blake3_result = 43;
+    HashSha256Result hash_sha256_result = 44;
+    OpEntryExistsResult op_entry_exists_result = 45;
+    Keccak256Result keccak256_result = 46;
+    LocalExecutionResponse local_execution_response = 47;
+    NativeAmountFromStringResult native_amount_from_string_result = 48;
+    NativeAmountToStringResult native_amount_to_string_result = 49;
+    ScalarDivRemNativeAmountResult scalar_div_rem_native_amount_result = 50;
+    ScalarMulNativeAmountResult scalar_mul_native_amount_result = 51;
+    SendAsyncMessageResult send_async_message_result = 52;
+    SetBytecodeResult set_bytecode_result = 53;
+    SetDsValueResult set_ds_value_result = 54;
+    SubNativeAmountResult sub_native_amount_result = 55;
+    TransferCoinsResult transfer_coins_result = 56;
+    UnsafeRandomResult unsafe_random_result = 57;
+    EvmVerifySigResult evm_verify_sig_result = 58;
+    VerifySigResult verify_sig_result = 59;
+    EvmGetAddressFromPubkeyResult evm_get_address_from_pubkey_result = 60;
+    EvmGetPubkeyFromSignatureResult evm_get_pubkey_from_signature_result = 61;
+    IsAddressEoaResult is_address_eoa_result = 62;
+    ChainIdResult chain_id_result = 63;
+    DeferredCallQuoteResult deferred_call_quote_result = 64;
+    DeferredCallExistsResult deferred_call_exists_result = 65;
+    DeferredCallRegisterResult deferred_call_register_result = 66;
+    DeferredCallCancelResult deferred_call_cancel_result = 67;
+  }
+}
+
+// Generic message that encapsulate response from ABI calls.
+message AbiResponse {
+  oneof resp {
+    // variant for success
+    RespResult res = 1;
+    // variant for error
+    Error error = 2;
+  }
+}
+
+// Amount to string request
+message NativeAmountToStringRequest {
+  // Amount to convert to string
+  massa.model.v1.NativeAmount to_convert = 1;
+}
+
+// Amount to string result
+message NativeAmountToStringResult {
+  // Converted Amount
+  string converted_amount = 1;
+}
+
+// Amount from string request
+message NativeAmountFromStringRequest {
+  // String to convert to Amount
+  string to_convert = 1;
+}
+
+// Amount from string result
+message NativeAmountFromStringResult {
+  // Converted Amount
+  massa.model.v1.NativeAmount converted_amount = 1;
+}
+
+// Check address request
+message CheckAddressRequest {
+  // Address to check
+  string to_check = 1;
+}
+
+// Check address result
+message CheckAddressResult {
+  // Is address valid
+  bool is_valid = 1;
+}
+
+// Check PubKey request
+message CheckPubKeyRequest {
+  // PubKey to check
+  string to_check = 1;
+}
+
+// Check PubKey result
+message CheckPubKeyResult {
+  // Is PubKey valid
+  bool is_valid = 1;
+}
+
+// Check Sig request
+message CheckSigRequest {
+  // Sig to check
+  string to_check = 1;
+}
+
+// Check Sig result
+message CheckSigResult {
+  // Is Sig valid
+  bool is_valid = 1;
+}
+
+// Check Amount request
+message CheckNativeAmountRequest {
+  // Amount to check
+  massa.model.v1.NativeAmount to_check = 1;
+}
+
+// Check Amount result
+message CheckNativeAmountResult {
+  // Is Amount valid
+  bool is_valid = 1;
+}
+
+// Amount addition request
+message AddNativeAmountRequest {
+  // First amount to add
+  massa.model.v1.NativeAmount amount1 = 1;
+  // Second amount to add
+  massa.model.v1.NativeAmount amount2 = 2;
+}
+
+// Amount addition result
+message AddNativeAmountResult {
+  // Sum of amounts
+  massa.model.v1.NativeAmount sum = 1;
+}
+
+// Amount subtraction request
+// try to compute difference = left - right
+// fails if right > left
+message SubNativeAmountRequest {
+  // First amount to subtract from
+  massa.model.v1.NativeAmount left = 1;
+  // Second amount to subtract
+  massa.model.v1.NativeAmount right = 2;
+}
+
+// Amount subtraction result
+message SubNativeAmountResult {
+  // Difference of amounts (left - right)
+  massa.model.v1.NativeAmount difference = 1;
+}
+
+// Amount multiplication request
+// Try to compute product = amount * coefficient (fail if overflow)
+message ScalarMulNativeAmountRequest {
+  // Amount to multiply
+  massa.model.v1.NativeAmount amount = 1;
+  // Coefficient to multiply by
+  uint64 coefficient = 2;
+}
+
+// Amount multiplication result
+message ScalarMulNativeAmountResult {
+  // Product of amount and coefficient
+  massa.model.v1.NativeAmount product = 1;
+}
+
+// Amount division by scalar request
+// Try to compute quotient = dividend / divisor
+// Fails if divisor == 0
+// Fails if underflow
+message ScalarDivRemNativeAmountRequest {
+  // Amount to divide
+  massa.model.v1.NativeAmount dividend = 1;
+  // Divisor to divide by
+  uint64 divisor = 2;
+}
+
+// Amount division by scalar result
+message ScalarDivRemNativeAmountResult {
+  // Quotient of amount and divisor
+  massa.model.v1.NativeAmount quotient = 1;
+  // Remainder of amount and divisor
+  massa.model.v1.NativeAmount remainder = 2;
+}
+
+// Amount division request
+message DivRemNativeAmountRequest {
+  // Amount to divide
+  massa.model.v1.NativeAmount dividend = 1;
+  // Divisor to divide by
+  massa.model.v1.NativeAmount divisor = 2;
+}
+
+// Amount division result
+message DivRemNativeAmountResult {
+  // Quotient of amount and divisor
+  uint64 quotient = 1;
+  // Remainder of amount and divisor
+  massa.model.v1.NativeAmount remainder = 2;
+}
+
+// Time addition checked request
+message CheckedAddNativeTimeRequest {
+  // First time to add
+  massa.model.v1.NativeTime left = 1;
+  // Second time to add
+  massa.model.v1.NativeTime right = 2;
+}
+
+// Time addition checked result
+message CheckedAddNativeTimeResult {
+  // Sum of times
+  massa.model.v1.NativeTime sum = 1;
+}
+
+// Time subtraction checked request
+message CheckedSubNativeTimeRequest {
+  // First time to subtract from
+  massa.model.v1.NativeTime left = 1;
+  // Second time to subtract
+  massa.model.v1.NativeTime right = 2;
+}
+
+// Time subtraction checked result
+message CheckedSubNativeTimeResult {
+  // Difference of times (left - right)
+  massa.model.v1.NativeTime difference = 1;
+}
+
+// Time scalar mult checked request
+message CheckedScalarMulNativeTimeRequest {
+  // Time to multiply
+  massa.model.v1.NativeTime time = 1;
+  // Coefficient to multiply by
+  uint64 coefficient = 2;
+}
+
+// Time scalar mult checked result
+message CheckedScalarMulNativeTimeResult {
+  // Product of time and coefficient
+  massa.model.v1.NativeTime product = 1;
+}
+
+// Time scalar divrem checked request
+message CheckedScalarDivRemNativeTimeRequest {
+  // Time to divide
+  massa.model.v1.NativeTime dividend = 1;
+  // Divisor to divide by
+  uint64 divisor = 2;
+}
+
+// Time scalar divrem checked result
+message CheckedScalarDivRemNativeTimeResult {
+  // Quotient of time and divisor
+  massa.model.v1.NativeTime quotient = 1;
+  // Remainder of time and divisor
+  massa.model.v1.NativeTime remainder = 2;
+}
+
+// Time division checked request
+message CheckedDivRemNativeTimeRequest {
+  // Time to divide
+  massa.model.v1.NativeTime dividend = 1;
+  // Divisor to divide by
+  massa.model.v1.NativeTime divisor = 2;
+}
+
+// Time division checked result
+message CheckedDivRemNativeTimeResult {
+  // Quotient of time and divisor
+  uint64 quotient = 1;
+  // Remainder of time and divisor
+  massa.model.v1.NativeTime remainder = 2;
+}
+
+// Time comparison request
+message CompareNativeTimeRequest {
+  // First time to compare
+  massa.model.v1.NativeTime left = 1;
+  // Second time to compare
+  massa.model.v1.NativeTime right = 2;
+}
+
+// Time comparison result
+message CompareNativeTimeResult {
+  // Comparison result
+  massa.model.v1.ComparisonResult result = 1;
+}
+
+// Compare Address request
+message CompareAddressRequest {
+  // First address to compare
+  string left = 1;
+  // Second address to compare
+  string right = 2;
+}
+
+// Compare Address result
+message CompareAddressResult {
+  // Comparison result
+  massa.model.v1.ComparisonResult result = 1;
+}
+
+// Compare PubKey request
+message ComparePubKeyRequest {
+  // First public key to compare
+  string left = 1;
+  // Second public key to compare
+  string right = 2;
+}
+
+// Compare PubKey result
+message ComparePubKeyResult {
+  // Comparison result
+  massa.model.v1.ComparisonResult result = 1;
+}
+
+// Verify Sig request
+message VerifySigRequest {
+  // Signature to verify
+  string sig = 1;
+  // Message to verify
+  bytes message = 2;
+  // Public key to verify with
+  string pub_key = 3;
+}
+
+// Verify Sig result
+message VerifySigResult {
+  // Verification result
+  bool is_verified = 1;
+}
+
+// Compare NativeAmount request
+message CompareNativeAmountRequest {
+  // First amount to compare
+  massa.model.v1.NativeAmount left = 1;
+  // Second amount to compare
+  massa.model.v1.NativeAmount right = 2;
+}
+
+// Compare NativeAmount result
+message CompareNativeAmountResult {
+  // Comparison result
+  massa.model.v1.ComparisonResult result = 1;
+}
+
+// Keccak256 hash request
+message Keccak256Request {
+  // Data to hash
+  bytes data = 1;
+}
+
+// Keccak256 hash result
+message Keccak256Result {
+  // Hash of data
+  bytes hash = 1;
+}
+
+// EVM signature verification request
+message EvmVerifySigRequest {
+  // Signature to verify
+  bytes sig = 1;
+  // Message to verify
+  bytes message = 2;
+  // Public key to verify with
+  bytes pub_key = 3;
+}
+
+// EVM signature verification result
+message EvmVerifySigResult {
+  // Verification result
+  bool is_verified = 1;
+}
+
+// EVM get address from public key request
+message EvmGetAddressFromPubkeyRequest {
+  // Public key to get address from
+  bytes pub_key = 1;
+}
+
+// EVM get address from public key result
+message EvmGetAddressFromPubkeyResult {
+  // Address
+  bytes address = 1;
+}
+
+// EVM get public key from signature request
+message EvmGetPubkeyFromSignatureRequest {
+  // Signed hash to verify
+  bytes hash = 1;
+  // Signature to verify
+  bytes sig = 2;
+}
+
+// EVM get public key from signature result
+message EvmGetPubkeyFromSignatureResult {
+  // Public key
+  bytes pub_key = 1;
+}
+
+// Is address EOA request
+message IsAddressEoaRequest {
+  // Address to check
+  string address = 1;
+}
+
+// Is address EOA result
+message IsAddressEoaResult {
+  // Is address EOA
+  bool is_eoa = 1;
+}
+
+// Blake3 hash request
+message HashBlake3Request {
+  // Data to hash
+  bytes data = 1;
+}
+
+// Blake3 hash result
+message HashBlake3Result {
+  // Hash of data
+  bytes hash = 1;
+}
+
+// Get keys request
+message GetDsKeysRequest {
+  // keys prefix
+  bytes prefix = 1;
+  // Address to get keys for
+  optional google.protobuf.StringValue address = 2;
+}
+
+// Get keys result
+message GetDsKeysResult {
+  // keys
+  repeated bytes keys = 1;
+}
+
+// Set data store value request
+message SetDsValueRequest {
+  // key
+  bytes key = 1;
+  // value
+  bytes value = 2;
+  // Address to set data for, if none, use current address
+  optional google.protobuf.StringValue address = 3;
+}
+
+// Set data store value result
+message SetDsValueResult {}
+
+// Append data request
+message AppendDsValueRequest {
+  // key
+  bytes key = 1;
+  // value
+  bytes value = 2;
+  // Address to append data for, if none, use current address
+  optional google.protobuf.StringValue address = 3;
+}
+
+// Append data result
+message AppendDsValueResult {}
+
+// Get data request
+message GetDsValueRequest {
+  // key
+  bytes key = 1;
+  // Address to get data for, if none, use current address
+  optional google.protobuf.StringValue address = 2;
+}
+
+// Get data result
+message GetDsValueResult {
+  // value
+  bytes value = 1;
+}
+
+// Delete data store entry request
+message DeleteDsEntryRequest {
+  // key
+  bytes key = 1;
+  // Address to delete data for, if none, use current address
+  optional google.protobuf.StringValue address = 2;
+}
+
+// Delete data store entry result
+message DeleteDsEntryResult {}
+
+// Data store entry exists request
+message DsEntryExistsRequest {
+  // key
+  bytes key = 1;
+  // Address to check data for, if none, use current address
+  optional google.protobuf.StringValue address = 2;
+}
+
+// Data store entry exists result
+message DsEntryExistsResult {
+  // has data
+  bool has_data = 1;
+}
+
+// Get owned addresses request
+message GetOwnedAddressesRequest {}
+
+// Get owned addresses result
+message GetOwnedAddressesResult {
+  // owned addresses
+  repeated string addresses = 1;
+}
+
+// Get call stack request
+message GetCallStackRequest {}
+
+// Get call stack result
+message GetCallStackResult {
+  // call stack
+  repeated string calls = 1;
+}
+
+// Address from public key request
+message AddressFromPubKeyRequest {
+  // Native public key
+  string pub_key = 1;
+}
+
+// Address from public key result
+message AddressFromPubKeyResult {
+  // Address
+  string address = 1;
+}
+
+// Unsafe random request
+message UnsafeRandomRequest {
+  uint32 num_bytes = 2;
+}
+
+// Unsafe random result
+message UnsafeRandomResult {
+  // Random bytes generated
+  bytes random_bytes = 1;
+}
+
+/// Deferred call cancel request
+message DeferredCallCancelRequest {
+  /// call id
+  google.protobuf.StringValue call_id = 1;
+}
+
+/// Deferred call cancel result
+message DeferredCallCancelResult {}
+
+// Deferred call quote
+message DeferredCallQuoteRequest {
+  /// target slot
+  massa.model.v1.Slot target_slot = 1;
+  /// max gas requested
+  uint64 max_gas = 2;
+  /// params size in bytes
+  uint64 params_size = 3;
+}
+
+// Deferred call quote result
+message DeferredCallQuoteResult {
+  /// available
+  bool available = 1;
+  /// cost
+  uint64 cost = 2;
+}
+
+// deferred call exists request
+message DeferredCallExistsRequest {
+  /// deferred call id
+  google.protobuf.StringValue call_id = 1;
+}
+
+// deferred call exists result
+message DeferredCallExistsResult {
+  /// call exists
+  bool call_exists = 1;
+}
+
+// deferred call register request
+message DeferredCallRegisterRequest {
+  /// target address
+  string target_address = 1;
+  /// target function
+  string target_function = 2;
+  /// start slot
+  massa.model.v1.Slot target_slot = 3;
+  /// gas requested
+  uint64 max_gas = 4;
+  /// params of the call
+  bytes params = 5;
+  /// coins
+  uint64 coins = 6;
+}
+
+/// deferred call register result
+message DeferredCallRegisterResult {
+  /// deferred call id
+  google.protobuf.StringValue call_id = 1;
+}
+
+// Send async message request filter
+message SendAsyncMessageFilter {
+  // Target address
+  string target_address = 1;
+  // Target key
+  google.protobuf.BytesValue target_key = 2;
+}
+
+// Send async message request
+message SendAsyncMessageRequest {
+  // Target address
+  string target_address = 1;
+  // Target handler (function name)
+  string target_handler = 2;
+  // Start slot for the message execution
+  massa.model.v1.Slot validity_start = 3;
+  // End slot for the message execution
+  massa.model.v1.Slot validity_end = 4;
+  // Gas given for the execution
+  uint64 execution_gas = 5;
+  // Message fee
+  uint64 raw_fee = 6;
+  // Coins sent to the execution context
+  uint64 raw_coins = 7;
+  // Message data
+  bytes data = 8;
+  // Filter for the message
+  SendAsyncMessageFilter filter = 9;
+}
+
+// Send async message result
+message SendAsyncMessageResult {}
+
+// Get origin operation id request
+message GetOriginOperationIdRequest {}
+
+// Get origin operation id result
+message GetOriginOperationIdResult {
+  optional google.protobuf.StringValue operation_id = 1;
+}
+
+// Get native time request
+message GetNativeTimeRequest {}
+
+// Get native time result
+message GetNativeTimeResult {
+  // Native time
+  massa.model.v1.NativeTime time = 1;
+}
+
+// Get current slot request
+message GetCurrentSlotRequest {}
+
+// Get current slot result
+message GetCurrentSlotResult {
+  // Current slot
+  massa.model.v1.Slot slot = 1;
+}
+
+// Set bytecode request
+message SetBytecodeRequest {
+  // Bytecode
+  bytes bytecode = 1;
+  // Address to set bytecode for, if none, use current address
+  optional google.protobuf.StringValue address = 2;
+}
+
+// Set bytecode result
+message SetBytecodeResult {}
+
+// Get bytecode request
+message GetBytecodeRequest {
+  // Address to get bytecode for, if none, use current address
+  optional google.protobuf.StringValue address = 1;
+}
+
+// Get bytecode result
+message GetBytecodeResult {
+  // Bytecode
+  bytes bytecode = 1;
+}
+
+// Caller has write access request
+message CallerHasWriteAccessRequest {}
+
+// Caller has write access result
+message CallerHasWriteAccessResult {
+  // Caller has write access
+  bool has_write_access = 1;
+}
+
+// Hash sha256 request
+message HashSha256Request {
+  // data
+  bytes data = 1;
+}
+
+// Hash sha256 result
+message HashSha256Result {
+  // hash
+  bytes hash = 1;
+}
+
+// Get op data request
+message GetOpDataRequest {
+  // key
+  bytes key = 1;
+}
+
+// Get op data result
+message GetOpDataResult {
+  // value
+  bytes value = 1;
+}
+
+// Op entry exists request
+message OpEntryExistsRequest {
+  // key
+  bytes key = 1;
+}
+
+// Op entry exists result
+message OpEntryExistsResult {
+  // has key
+  bool has_key = 1;
+}
+
+// Get op keys request
+message GetOpKeysRequest {
+  // keys prefix
+  bytes prefix = 1;
+}
+
+// Get op keys result
+message GetOpKeysResult {
+  // keys
+  repeated bytes keys = 1;
+}
+
+// Get remaining gas request
+message GetRemainingGasRequest {}
+
+// Get remaining gas result
+message GetRemainingGasResult {
+  // remaining gas
+  uint64 remaining_gas = 1;
+}
+
+// Get balance request
+message GetBalanceRequest {
+  // Address to get balance for, if none, use current address
+  optional google.protobuf.StringValue address = 1;
+}
+
+// Get balance result
+message GetBalanceResult {
+  // balance
+  massa.model.v1.NativeAmount balance = 1;
+}
+
+// Get call coins request
+message GetCallCoinsRequest {}
+
+// Get call coins result
+message GetCallCoinsResult {
+  // coins
+  massa.model.v1.NativeAmount coins = 1;
+}
+
+// Get the version of the address request
+message GetAddressVersionRequest {
+  string address = 1;
+}
+
+// Get the version of the address result
+message GetAddressVersionResult {
+  uint64 version = 1;
+}
+
+// Get the category of the address request
+message GetAddressCategoryRequest {
+  string address = 1;
+}
+
+// Get the category of the address result
+message GetAddressCategoryResult {
+  massa.model.v1.AddressCategory category = 1;
+}
+
+// Get the version of the public key request
+message GetPubKeyVersionRequest {
+  string pub_key = 1;
+}
+
+// Get the version of the public key result
+message GetPubKeyVersionResult {
+  uint64 version = 1;
+}
+
+// Get the version of the signature request
+message GetSignatureVersionRequest {
+  string signature = 1;
+}
+
+// Get the version of the signature result
+message GetSignatureVersionResult {
+  uint64 version = 1;
+}
+
+// bytes to base58 request
+message BytesToBase58CheckRequest {
+  bytes bytes = 1;
+}
+
+// bytes to base58 result
+message BytesToBase58CheckResult {
+  string base58_check = 1;
+}
+
+// base58 to bytes request
+message Base58CheckToBytesRequest {
+  string base58_check = 1;
+}
+
+// base58 to bytes result
+message Base58CheckToBytesResult {
+  bytes bytes = 1;
+}
+
+// Chain id request
+message ChainIdRequest {}
+
+// Chain id result
+message ChainIdResult {
+  uint64 id = 1;
+}

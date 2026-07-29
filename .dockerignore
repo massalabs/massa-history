@@ -1,0 +1,44 @@
+# Repo-level .dockerignore.
+#
+# Docker build contexts for both services are rooted at the workspace root
+# because `massa-indexer/build.rs` needs `../massa-proto/proto` and the
+# explorer needs `massa-explorer/`. Everything else is noise.
+
+# Rust / Cargo
+**/target
+**/*.rs.bk
+
+# Node
+**/node_modules
+**/npm-debug.log
+**/.vite
+**/dist
+
+# Local RocksDB data + logs
+**/data
+**/logs
+massa-indexer/data
+massa-indexer/logs
+
+# Massa node checkout (we don't need it inside the indexer image)
+massa
+massa-graph-old
+block-explorer-old
+
+# Git / editor
+.git
+.github
+.gitignore
+.gitattributes
+**/.idea
+**/.vscode
+**/*.swp
+**/*.swo
+
+# OS
+.DS_Store
+**/Thumbs.db
+
+# Local-only envs
+.env
+.env.*

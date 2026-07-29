@@ -1,0 +1,542 @@
+// Copyright (c) 2023 MASSA LABS <info@massa.net>
+
+syntax = "proto3";
+
+package massa.model.v1;
+
+import "google/protobuf/wrappers.proto";
+import "massa/model/v1/amount.proto";
+import "massa/model/v1/commons.proto";
+import "massa/model/v1/denunciation.proto";
+import "massa/model/v1/slot.proto";
+
+option csharp_namespace = "Com.Massa.Model.v1";
+option go_package = "github.com/massalabs/massa/model/v1;v1";
+option java_multiple_files = true;
+option java_package = "com.massa.model.v1";
+option objc_class_prefix = "MMODEL";
+option php_namespace = "Com\\Massa\\Model\\V1";
+option ruby_package = "Com::Massa::Model::V1";
+option swift_prefix = "MMODEL";
+
+// SlotExecutionOutput
+message SlotExecutionOutput {
+  // Status
+  ExecutionOutputStatus status = 1;
+  // Executed slot output
+  ExecutionOutput execution_output = 2;
+}
+
+// FinalizedExecutionOutput
+message FinalizedExecutionOutput {
+  // Slot
+  massa.model.v1.Slot slot = 1;
+}
+
+// ExecutionOutput
+message ExecutionOutput {
+  // Slot
+  massa.model.v1.Slot slot = 1;
+  // Block id at that slot (Optional)
+  google.protobuf.StringValue block_id = 2;
+  // Events emitted by the execution step
+  repeated ScExecutionEvent events = 3;
+  // State changes caused by the execution step
+  StateChanges state_changes = 4;
+}
+
+// ScExecutionEvent
+message ScExecutionEvent {
+  // Sc execution context
+  ScExecutionEventContext context = 1;
+  // Generated data of the event
+  bytes data = 2;
+}
+
+// ScExecutionEvent context
+message ScExecutionEventContext {
+  // When was it generated
+  massa.model.v1.Slot origin_slot = 1;
+  // Block id if there was a block at that slot (Optional)
+  google.protobuf.StringValue block_id = 2;
+  // Index of the event in the slot
+  uint64 index_in_slot = 3;
+  // Call stack addresses. most recent at the end
+  repeated string call_stack = 4;
+  // Origin operation id (Optional)
+  google.protobuf.StringValue origin_operation_id = 5;
+  // If a failure occurred
+  bool is_failure = 6;
+  // Status
+  ScExecutionEventStatus status = 7;
+}
+
+// ScExecutionEventStatus type enum
+enum ScExecutionEventStatus {
+  SC_EXECUTION_EVENT_STATUS_UNSPECIFIED = 0; // Default enum value
+  SC_EXECUTION_EVENT_STATUS_FINAL = 1; // Final status
+  SC_EXECUTION_EVENT_STATUS_READ_ONLY = 2; // Read only status
+  SC_EXECUTION_EVENT_STATUS_CANDIDATE = 3; // Candidate status
+}
+
+// ScExecutionEventsStatus
+message ScExecutionEventsStatus {
+  // Status
+  repeated ScExecutionEventStatus status = 1;
+}
+
+// ExecutionOutputStatus type enum
+enum ExecutionOutputStatus {
+  EXECUTION_OUTPUT_STATUS_UNSPECIFIED = 0; // Default enum value
+  EXECUTION_OUTPUT_STATUS_CANDIDATE = 1; // Candidate status
+  EXECUTION_OUTPUT_STATUS_FINAL = 2; // Final status
+  EXECUTION_OUTPUT_STATUS_UNKNOWN = 3; // Unknown status
+}
+
+// StateChanges
+message StateChanges {
+  // Ledger changes
+  repeated LedgerChangeEntry ledger_changes = 1;
+  // Asynchronous pool changes
+  repeated AsyncPoolChangeEntry async_pool_changes = 2;
+  // Executed operations changes
+  repeated ExecutedOpsChangeEntry executed_ops_changes = 4;
+  // Executed denunciations changes
+  repeated massa.model.v1.DenunciationIndex executed_denunciations_changes = 5;
+  // Execution trail hash change
+  SetOrKeepString execution_trail_hash_change = 6;
+}
+
+// ExecutedOpsChangeEntry
+message ExecutedOpsChangeEntry {
+  // string
+  string operation_id = 1;
+  // ExecutedOpsChangeValue
+  ExecutedOpsChangeValue value = 2;
+}
+
+// ExecutedOpsChangeValue
+message ExecutedOpsChangeValue {
+  // The status of the execution of the operation
+  OperationExecutionStatus status = 1;
+  // Slot until which the operation remains valid (included)
+  massa.model.v1.Slot slot = 2;
+}
+
+// OperationExecutionStatus type enum
+enum OperationExecutionStatus {
+  OPERATION_EXECUTION_STATUS_UNSPECIFIED = 0; // Default enum value
+  OPERATION_EXECUTION_STATUS_SUCCESS = 1; // Success status
+  OPERATION_EXECUTION_STATUS_FAILED = 2; // Failed only status
+}
+
+// AsyncPoolChange Entry
+message AsyncPoolChangeEntry {
+  // Async message id
+  string async_message_id = 1;
+  // AsyncPool message
+  AsyncPoolChangeValue value = 2;
+}
+
+// AsyncPoolChangeValue
+message AsyncPoolChangeValue {
+  // The type of the change
+  AsyncPoolChangeType type = 1;
+  // AsyncPool message
+  oneof message {
+    // Created ledger entry
+    AsyncMessage created_message = 2;
+    // Update ledger entry
+    AsyncMessageUpdate updated_message = 3;
+  }
+}
+
+// AsyncPoolChangeType type enum
+enum AsyncPoolChangeType {
+  ASYNC_POOL_CHANGE_TYPE_UNSPECIFIED = 0; // Default enum value
+  ASYNC_POOL_CHANGE_TYPE_SET = 1; // Set type
+  ASYNC_POOL_CHANGE_TYPE_UPDATE = 2; // Activate only type
+  ASYNC_POOL_CHANGE_TYPE_DELETE = 3; // Delete only type
+}
+
+// Asynchronous smart contract message
+message AsyncMessage {
+  // Slot at which the message was emitted
+  massa.model.v1.Slot emission_slot = 1;
+  // Index of the emitted message within the `emission_slot`.
+  // This is used for disambiguate the emission of multiple messages at the same
+  // slot.
+  uint64 emission_index = 2;
+  // The address that sent the message
+  string sender = 3;
+  // The address towards which the message is being sent
+  string destination = 4;
+  // the handler function name within the destination address' bytecode
+  string handler = 5;
+  // Maximum gas to use when processing the message
+  uint64 max_gas = 6;
+  // Fee paid by the sender when the message is processed.
+  massa.model.v1.NativeAmount fee = 7;
+  // Coins sent from the sender to the target address of the message.
+  // Those coins are spent by the sender address when the message is sent,
+  // and credited to the destination address when receiving the message.
+  // In case of failure or discard, those coins are reimbursed to the sender.
+  massa.model.v1.NativeAmount coins = 8;
+  // Slot at which the message starts being valid (bound included in the
+  // validity range)
+  massa.model.v1.Slot validity_start = 9;
+  // Slot at which the message stops being valid (bound not included in the
+  // validity range)
+  massa.model.v1.Slot validity_end = 10;
+  // Raw payload data of the message
+  bytes data = 11;
+  // Trigger that define whenever a message can be executed
+  AsyncMessageTrigger trigger = 12;
+  // Boolean that determine if the message can be executed. For messages without
+  // filter this boolean is always true. For messages with filter, this boolean
+  // is true if the filter has been matched between `validity_start` and current
+  // slot.
+  bool can_be_executed = 13;
+}
+
+// Asynchronous smart contract message
+message AsyncMessageUpdate {
+  // Change the slot at which the message was emitted
+  SetOrKeepSlot emission_slot = 1;
+  // Change the index of the emitted message within the `emission_slot`.
+  // This is used for disambiguate the emission of multiple messages at the same
+  // slot.
+  SetOrKeepUint64 emission_index = 2;
+  // Change the address that sent the message
+  SetOrKeepString sender = 3;
+  // Change the address towards which the message is being sent
+  SetOrKeepString destination = 4;
+  // Change the handler function name within the destination address' bytecode
+  SetOrKeepString handler = 5;
+  // Change the maximum gas to use when processing the message
+  SetOrKeepUint64 max_gas = 6;
+  // Change the fee paid by the sender when the message is processed.
+  SetOrKeepUint64 fee = 7;
+  // Change the coins sent from the sender to the target address of the message.
+  // Those coins are spent by the sender address when the message is sent,
+  // and credited to the destination address when receiving the message.
+  // In case of failure or discard, those coins are reimbursed to the sender.
+  SetOrKeepUint64 coins = 8;
+  // Change the slot at which the message starts being valid (bound included in
+  // the validity range)
+  SetOrKeepSlot validity_start = 9;
+  // Change the slot at which the message stops being valid (bound not included
+  // in the validity range)
+  SetOrKeepSlot validity_end = 10;
+  // Change the raw payload data of the message
+  SetOrKeepBytes data = 11;
+  // Change the trigger that define whenever a message can be executed
+  SetOrKeepAsyncMessageTrigger trigger = 12;
+  // Change the boolean that determine if the message can be executed. For
+  // messages without filter this boolean is always true. For messages with
+  // filter, this boolean is true if the filter has been matched between
+  // `validity_start` and current slot.
+  SetOrKeepBool can_be_executed = 13;
+}
+
+// Set or Keep Slot
+message SetOrKeepSlot {
+  // The type of the change
+  oneof change {
+    // The value of that entry (Optional)
+    massa.model.v1.Slot set = 1;
+    // Keep the existing value
+    massa.model.v1.Empty keep = 2;
+  }
+}
+
+// Set or Keep Uint64
+message SetOrKeepUint64 {
+  // The type of the change
+  oneof change {
+    // The value of that entry (Optional)
+    google.protobuf.UInt64Value set = 1;
+    // Keep the existing value
+    massa.model.v1.Empty keep = 2;
+  }
+}
+
+// Set or Keep String
+message SetOrKeepString {
+  // The type of the change
+  oneof change {
+    // The value of that entry (Optional)
+    google.protobuf.StringValue set = 1;
+    // Keep the existing value
+    massa.model.v1.Empty keep = 2;
+  }
+}
+
+// Set or Keep Bytes
+message SetOrKeepBytes {
+  // The type of the change
+  oneof change {
+    // The value of that entry (Optional)
+    google.protobuf.BytesValue set = 1;
+    // Keep the existing value
+    massa.model.v1.Empty keep = 2;
+  }
+}
+
+// Set or Keep Bool
+message SetOrKeepBool {
+  // The type of the change
+  oneof change {
+    // The value of that entry (Optional)
+    google.protobuf.BoolValue set = 1;
+    // Keep the existing value
+    massa.model.v1.Empty keep = 2;
+  }
+}
+
+// Set or Keep AsyncMessageTrigger
+message SetOrKeepAsyncMessageTrigger {
+  // The type of the change
+  oneof change {
+    // The value of that entry (Optional)
+    AsyncMessageTrigger set = 1;
+    // Keep the existing value
+    massa.model.v1.Empty keep = 2;
+  }
+}
+
+// Structure defining a trigger for an asynchronous message
+message AsyncMessageTrigger {
+  // Filter on the address
+  string address = 1;
+  // Filter on the datastore key (Optional)
+  google.protobuf.BytesValue datastore_key = 2;
+}
+
+// LedgerChangeEntry
+message LedgerChangeEntry {
+  // Address
+  string address = 1;
+  // Ledger message
+  LedgerChangeValue value = 2;
+}
+
+// LedgerChangeValue
+message LedgerChangeValue {
+  // The type of the change
+  LedgerChangeType type = 1;
+  // LedgerEntry or LedgerEntryUpdate
+  oneof entry {
+    // Created ledger entry
+    LedgerEntry created_entry = 2;
+    // Update ledger entry
+    LedgerEntryUpdate updated_entry = 3;
+  }
+}
+
+// LedgerChangeType type enum
+enum LedgerChangeType {
+  LEDGER_CHANGE_TYPE_UNSPECIFIED = 0; // Default enum value
+  LEDGER_CHANGE_TYPE_SET = 1; // Set type
+  LEDGER_CHANGE_TYPE_UPDATE = 2; // Update type
+  LEDGER_CHANGE_TYPE_DELETE = 3; // Delete type
+}
+
+// An entry associated to an address in the `FinalLedger`
+message LedgerEntry {
+  // The balance of that entry
+  massa.model.v1.NativeAmount balance = 1;
+  // Executable bytecode
+  bytes bytecode = 2;
+  // A key-value store associating a hash to arbitrary bytes
+  repeated massa.model.v1.BytesMapFieldEntry datastore = 3;
+}
+
+// Represents an update to one or more fields of a `LedgerEntry`
+message LedgerEntryUpdate {
+  // Change the balance
+  SetOrKeepBalance balance = 1;
+  // Change the executable bytecode
+  SetOrKeepBytes bytecode = 2;
+  // Change datastore entries
+  repeated SetOrDeleteDatastoreEntry datastore = 3;
+}
+
+// Set or Keep Balance
+message SetOrKeepBalance {
+  // The type of the change
+  oneof change {
+    // The value of that entry (Optional)
+    massa.model.v1.NativeAmount set = 1;
+    // Keep the existing value
+    massa.model.v1.Empty keep = 2;
+  }
+}
+
+// Set or Delete DatastoreEntry
+message SetOrDeleteDatastoreEntry {
+  // The type of the change
+  oneof change {
+    // Executable bytecode (Optional)
+    massa.model.v1.BytesMapFieldEntry set = 1;
+    // Delete the existing bytecode
+    massa.model.v1.Empty delete = 2;
+  }
+}
+
+// Read-only execution call
+message ReadOnlyExecutionCall {
+  // Maximum gas to spend in the execution.
+  uint64 max_gas = 1;
+  // Call stack to simulate, older caller first
+  repeated ExecutionStackElement call_stack = 2;
+  // Target of the call
+  oneof target {
+    // Byte code
+    BytecodeExecution bytecode_call = 3;
+    // Function call
+    FunctionCall function_call = 4;
+  }
+  // Caller's address, (Optional) if not set, an auto-generated address will be
+  // used
+  google.protobuf.StringValue caller_address = 5;
+  // fee paid by the caller when the call is processed (optional)
+  massa.model.v1.NativeAmount fee = 7;
+}
+
+/// Execute a bytecode
+message BytecodeExecution {
+  // Byte code
+  bytes bytecode = 1;
+  // Serialized datastore (key value store)  for `ExecuteSC` Operation
+  // (Optional)
+  bytes operation_datastore = 2;
+}
+
+// Execute a function call
+message FunctionCall {
+  // Target address
+  string target_address = 1;
+  // Target function
+  string target_function = 2;
+  // Parameter to pass to the target function
+  bytes parameter = 3;
+  // Coins transferred to the target address during the call
+  massa.model.v1.NativeAmount coins = 4;
+}
+
+// Structure describing the output of a read only execution
+message ReadOnlyExecutionOutput {
+  // Output of a single execution
+  ExecutionOutput out = 1;
+  // Gas cost for this execution
+  uint64 used_gas = 2;
+  // Returned value from the module call
+  bytes call_result = 3;
+}
+
+// Structure describing an element of the execution stack.
+// Every time a function is called from bytecode,
+// a new `ExecutionStackElement` is pushed at the top of the execution stack
+// to represent the local execution context of the called function,
+// instead of the caller's which should lie just below in the stack.
+message ExecutionStackElement {
+  // Called address
+  string address = 1;
+  // Coins transferred to the target address during the call
+  massa.model.v1.NativeAmount coins = 2;
+  // List of addresses owned by the current call, and on which the current call
+  // has write access. This list should contain `ExecutionStackElement::address`
+  // in the sense that an address should have write access to itself. This list
+  // should also contain all addresses created previously during the call to
+  // allow write access on newly created addresses in order to set them up, but
+  // only within the scope of the current stack element. That way, only the
+  // current scope and neither its caller not the functions it calls gain this
+  // write access, which is important for security. Note that we use a vector
+  // instead of a pre-hashed set to ensure order determinism, the performance
+  // hit of linear search remains minimal because `owned_addresses` will always
+  // contain very few elements.
+  repeated string owned_addresses = 3;
+  // Datastore (key value store) for `ExecuteSC` Operation (Optional)
+  repeated massa.model.v1.BytesMapFieldEntry operation_datastore = 4;
+}
+
+message TargetAmount {
+  massa.model.v1.NativeAmount amount = 1;
+  string address = 2;
+}
+
+message AsyncMessageExecution {
+  bool success = 1;
+  string sender = 2;
+  string destination = 3;
+  massa.model.v1.NativeAmount coins = 4;
+}
+
+message DeferredCallExecution {
+  bool success = 1;
+  string sender = 2;
+  string target_address = 3;
+  string target_function = 4;
+  massa.model.v1.NativeAmount coins = 5;
+}
+
+message ExecTransferInfo {
+  string id = 1;
+  google.protobuf.StringValue from_address = 2;
+  google.protobuf.StringValue to_address = 3;
+  massa.model.v1.TransferValue value = 4;
+  massa.model.v1.CoinOrigin origin = 5;
+  google.protobuf.StringValue operation_id = 6;
+  google.protobuf.StringValue async_msg_id = 7;
+  google.protobuf.StringValue deferred_call_id = 8;
+  massa.model.v1.DenunciationIndex denunciation_index = 9;
+}
+
+// enum CoinDirection {
+//   COIN_DIRECTION_UNSPECIFIED = 0;
+//   COIN_DIRECTION_DEBIT = 1;
+//   COIN_DIRECTION_CREDIT = 2;
+// }
+
+message TransferValue {
+  oneof value {
+    uint64 rolls = 1;
+    massa.model.v1.NativeAmount coins = 2;
+    massa.model.v1.NativeAmount deferred_credits = 3;
+  }
+}
+
+enum CoinOrigin {
+  COIN_ORIGIN_UNSPECIFIED = 0;
+  COIN_ORIGIN_BLOCK_REWARD = 1;
+  COIN_ORIGIN_DEFERRED_CALL_FAIL = 2;
+  COIN_ORIGIN_DEFERRED_CALL_CANCEL = 3;
+  COIN_ORIGIN_DEFERRED_CALL_COINS = 4;
+  COIN_ORIGIN_DEFERRED_CALL_REGISTER = 5;
+  COIN_ORIGIN_DEFERRED_CALL_STORAGE_REFUND = 6;
+  COIN_ORIGIN_ENDORSEMENT_REWARD = 7;
+  COIN_ORIGIN_ENDORSED_REWARD = 8;
+  COIN_ORIGIN_SLASH = 9;
+  COIN_ORIGIN_OP_ROLL_BUY = 10;
+  COIN_ORIGIN_OP_ROLL_SELL = 11;
+  COIN_ORIGIN_OP_CALLSC_COINS = 12;
+  COIN_ORIGIN_READ_ONLY_FN_CALL_FEES = 13;
+  COIN_ORIGIN_READ_ONLY_FN_CALL_COINS = 14;
+  COIN_ORIGIN_READ_ONLY_BYTECODE_EXEC_FEES = 15;
+  COIN_ORIGIN_SET_BYTECODE_STORAGE = 16;
+  COIN_ORIGIN_ABI_CALL_COINS = 17;
+  COIN_ORIGIN_ABI_TRANSFER_COINS = 18;
+  COIN_ORIGIN_ABI_TRANSFER_FOR_COINS = 19;
+  COIN_ORIGIN_ABI_SEND_MSG_COINS = 20;
+  COIN_ORIGIN_ABI_SEND_MSG_FEES = 21;
+  COIN_ORIGIN_OP_ROLL_SELL_DEFERRED_MAS = 22;
+  COIN_ORIGIN_OP_EXECUTESC_FEES = 23;
+  COIN_ORIGIN_OP_TRANSACTION_COINS = 24;
+  COIN_ORIGIN_OP_TRANSACTION_FEES = 25;
+  COIN_ORIGIN_ASYNC_MSG_COINS = 26;
+  COIN_ORIGIN_ASYNC_MSG_CANCEL = 27;
+  COIN_ORIGIN_CREATE_SC_STORAGE = 28;
+  COIN_ORIGIN_DATASTORE_STORAGE = 29;
+  COIN_ORIGIN_DEFERRED_CREDIT = 30;
+}

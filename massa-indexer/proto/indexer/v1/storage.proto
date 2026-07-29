@@ -1,0 +1,459 @@
+// Indexer-internal storage + peer-wire messages.
+//
+// These are the only values the indexer persists in RocksDB (outside of
+// the schema-version marker) and the only payloads the peer protocol
+// ships over the wire. Keeping one message shape for both ensures a
+// FINAL peer-sent block row can be written byte-for-byte to local
+// storage with no re-encoding pass.
+//
+// Design notes:
+//   * Ids are transmitted as their **binary key** bytes (the
+//     bs58-check-decoded `version ‖ hash` form — 33 bytes for
+//     block/op/endorsement ids, 34 bytes for addresses). Consumers
+//     rebuild the display string via `ids::BlockId::from_key_bytes`
+//     etc. Using bytes (not strings) halves the wire size and skips the
+//     utf-8 validation proto does for `string` fields.
+//   * Variable-length "opaque" ids the node emits as strings (async
+//     message ids, deferred call ids, trail hashes, signatures) stay as
+//     `string` / `bytes` — they have no canonical binary form.
+//   * All enum-with-fields types (OperationKind variants, TransferValue
+//     kinds, CoinOrigin variants, StoredDenunciation subtypes) are
+//     modelled as `oneof` to preserve the schema-driven nature of the
+//     indexer. Unknown variants at decode time surface as
+//     `*Kind::Unknown` on the Rust side (forward-compat).
+
+syntax = "proto3";
+package massa.indexer.v1;
+
+// -----------------------------------------------------------------------
+// Common
+// -----------------------------------------------------------------------
+
+message SlotPb {
+  uint64 period = 1;
+  uint32 thread = 2;
+}
+
+enum SlotStatusPb {
+  SLOT_STATUS_UNKNOWN = 0;
+  SLOT_STATUS_CANDIDATE = 1;
+  SLOT_STATUS_FINAL = 2;
+}
+
+enum BlockStatusPb {
+  BLOCK_STATUS_UNSPECIFIED = 0;
+  BLOCK_STATUS_SEEN_CANDIDATE = 1;
+  BLOCK_STATUS_FINAL = 2;
+  BLOCK_STATUS_DISCARDED = 3;
+}
+
+enum ExecStatusPb {
+  EXEC_STATUS_UNSPECIFIED = 0;
+  EXEC_STATUS_OK = 1;
+  EXEC_STATUS_FAILED = 2;
+}
+
+message SlotCompletenessPb {
+  bool block_body_stored = 1;
+  bool exec_output_final = 2;
+  bool exec_output_candidate = 3;
+  bool transfers_stored = 4;
+}
+
+// -----------------------------------------------------------------------
+// SlotState
+// -----------------------------------------------------------------------
+
+message SlotStatePb {
+  SlotPb slot = 1;
+  SlotStatusPb status = 2;
+  bool is_miss = 3;
+  // 33-byte BlockId key, empty if no final block yet.
+  bytes final_block_id_key = 4;
+  // 33-byte BlockId keys.
+  repeated bytes candidate_block_id_keys = 5;
+  string execution_trail_hash = 6;
+  // 33-byte OperationId keys.
+  repeated bytes executed_op_id_keys = 7;
+  uint32 sc_event_count = 8;
+  SlotCompletenessPb completeness = 9;
+  int64 first_seen_ts_ms = 10;
+  int64 last_updated_ts_ms = 11;
+}
+
+// -----------------------------------------------------------------------
+// MetaRow
+// -----------------------------------------------------------------------
+
+message MetaRowPb {
+  string network = 1;
+  int64 genesis_timestamp_ms = 2;
+  int64 t0_ms = 3;
+  uint32 thread_count = 4;
+  SlotPb last_final_slot = 5;
+  bool has_last_final_slot = 6;
+  SlotPb last_candidate_slot = 7;
+  bool has_last_candidate_slot = 8;
+  string build_version = 9;
+  int64 created_at_ms = 10;
+  int64 updated_at_ms = 11;
+}
+
+// -----------------------------------------------------------------------
+// Endorsements / Blocks / Denunciations
+// -----------------------------------------------------------------------
+
+message StoredEndorsementPb {
+  // Endorsement secure_hash (33-byte key).
+  bytes id_key = 1;
+  SlotPb slot = 2;
+  uint32 index = 3;
+  bytes endorsed_block_id_key = 4;   // 33B
+  string content_creator_pub_key = 5;
+  bytes content_creator_address_key = 6;  // 34B
+  string signature = 7;
+  uint64 serialized_size = 8;
+  bytes included_block_id_key = 9;   // 33B
+  SlotPb included_slot = 10;
+  int64 first_seen_ts_ms = 11;
+}
+
+// StoredDenunciation "oneof" form — mirrors the Rust enum.
+message StoredDenunciationPb {
+  oneof kind {
+    DenunciationBlockHeaderPb block_header = 1;
+    DenunciationEndorsementPb endorsement = 2;
+    DenunciationAddressPb address = 3;
+    DenunciationUnknownPb unknown = 4;
+  }
+}
+
+message DenunciationBlockHeaderPb {
+  string public_key = 1;
+  SlotPb slot = 2;
+  string hash_1 = 3;
+  string hash_2 = 4;
+  string signature_1 = 5;
+  string signature_2 = 6;
+}
+
+message DenunciationEndorsementPb {
+  string public_key = 1;
+  SlotPb slot = 2;
+  uint32 index = 3;
+  string hash_1 = 4;
+  string hash_2 = 5;
+  string signature_1 = 6;
+  string signature_2 = 7;
+}
+
+message DenunciationAddressPb {
+  string address_denounced = 1;
+  SlotPb slot = 2;
+  uint64 slashed_nmas = 3;
+}
+
+message DenunciationUnknownPb {}
+
+message StoredDenunciationEntryPb {
+  // SHA-256 of canonical payload (32B).
+  bytes hash = 1;
+  SlotPb slot = 2;
+  string kind = 3;
+  bytes denounced_addr_key = 4;  // 34B, empty if unknown
+  bool has_denounced_addr = 5;
+  StoredDenunciationPb denunciation = 6;
+  bytes included_block_id_key = 7;   // 33B, empty if unknown
+  bool has_included_block_id = 8;
+  SlotPb included_slot = 9;
+  bool has_included_slot = 10;
+  int64 first_seen_ts_ms = 11;
+}
+
+message StoredBlockPb {
+  bytes id_key = 1;                      // 33B
+  SlotPb slot = 2;
+  bytes creator_key = 3;                 // 34B
+  repeated bytes parent_keys = 4;        // 33B each
+  repeated bytes operation_id_keys = 5;  // 33B each
+  repeated StoredEndorsementPb endorsements = 6;
+  repeated string endorsement_ids = 7;   // redundant display form for convenience
+  repeated StoredDenunciationPb denunciations = 8;
+
+  uint32 current_version = 9;
+  uint32 announced_version = 10;
+  bool has_announced_version = 11;
+  string operations_hash = 12;
+  string signature = 13;
+  string content_creator_pub_key = 14;
+  uint64 serialized_size = 15;
+  // Raw protobuf-encoded `SignedBlockHeader` from the node.
+  bytes raw_signed_header = 16;
+
+  BlockStatusPb status = 17;
+  int64 first_seen_ts_ms = 18;
+}
+
+// -----------------------------------------------------------------------
+// Operations
+// -----------------------------------------------------------------------
+
+enum OperationKindPb {
+  OP_KIND_UNKNOWN = 0;
+  OP_KIND_TRANSACTION = 1;
+  OP_KIND_ROLL_BUY = 2;
+  OP_KIND_ROLL_SELL = 3;
+  OP_KIND_EXECUTE_SC = 4;
+  OP_KIND_CALL_SC = 5;
+}
+
+message DatastoreEntryPb {
+  // Hex-encoded to match REST surface exactly.
+  string key_hex = 1;
+  string value_hex = 2;
+}
+
+message OperationDetailsPb {
+  uint64 amount_nmas = 1;
+  bool has_amount_nmas = 2;
+  string recipient_address = 3;
+  bool has_recipient_address = 4;
+
+  uint64 roll_count = 5;
+  bool has_roll_count = 6;
+
+  string target_address = 7;
+  bool has_target_address = 8;
+  string target_function = 9;
+  bool has_target_function = 10;
+  string parameter_hex = 11;
+  bool has_parameter_hex = 12;
+  uint64 parameter_len = 13;
+  bool has_parameter_len = 14;
+  uint64 coins_nmas = 15;
+  bool has_coins_nmas = 16;
+  uint64 max_gas = 17;
+  bool has_max_gas = 18;
+
+  string bytecode_hex = 19;
+  bool has_bytecode_hex = 20;
+  uint64 bytecode_size = 21;
+  bool has_bytecode_size = 22;
+  uint64 max_coins_nmas = 23;
+  bool has_max_coins_nmas = 24;
+  repeated DatastoreEntryPb datastore = 25;
+  uint32 datastore_keys = 26;
+  bool has_datastore_keys = 27;
+}
+
+message OperationInclusionPb {
+  SlotPb slot = 1;
+  bytes block_id_key = 2;  // 33B
+}
+
+message StoredOperationPb {
+  bytes id_key = 1;       // 33B
+  bytes creator_key = 2;  // 34B
+  bytes target_key = 3;   // 34B, empty if none
+  bool has_target = 4;
+  OperationKindPb kind = 5;
+  uint64 expire_period = 6;
+  uint64 fee_nmas = 7;
+  uint32 thread = 8;
+  repeated OperationInclusionPb inclusions = 9;
+
+  ExecStatusPb candidate_exec_status = 10;
+  bool has_candidate_exec_status = 11;
+  ExecStatusPb final_exec_status = 12;
+  bool has_final_exec_status = 13;
+
+  OperationDetailsPb details = 14;
+
+  string signature = 15;
+  string content_creator_pub_key = 16;
+  uint64 serialized_size = 17;
+  bytes raw_signed_op = 18;
+
+  int64 first_seen_ts_ms = 19;
+}
+
+// -----------------------------------------------------------------------
+// SC events
+// -----------------------------------------------------------------------
+
+message StoredScEventPb {
+  SlotPb slot = 1;
+  uint32 index_in_slot = 2;
+  string data = 3;
+  repeated bytes emitter_addr_keys = 4;  // 34B each
+  repeated bytes caller_addr_keys = 5;   // 34B each
+  SlotStatusPb status = 6;
+  bytes op_id_key = 7;  // 33B, empty if none
+  bool has_op_id = 8;
+}
+
+// -----------------------------------------------------------------------
+// Transfers
+// -----------------------------------------------------------------------
+
+// Modelled as a oneof to match the Rust `TransferValue` enum shape.
+message TransferValuePb {
+  oneof value {
+    TransferCoinsPb coins = 1;
+    TransferRollsPb rolls = 2;
+    TransferDeferredCreditsPb deferred_credits = 3;
+    TransferUnknownPb unknown = 4;
+  }
+}
+message TransferCoinsPb { uint64 nmas = 1; }
+message TransferRollsPb { uint64 count = 1; }
+message TransferDeferredCreditsPb { uint64 nmas = 1; }
+message TransferUnknownPb {}
+
+enum CoinOriginKindPb {
+  COIN_ORIGIN_UNSPECIFIED = 0;
+  COIN_ORIGIN_BLOCK_REWARD = 1;
+  COIN_ORIGIN_DEFERRED_CALL_FAIL = 2;
+  COIN_ORIGIN_DEFERRED_CALL_CANCEL = 3;
+  COIN_ORIGIN_DEFERRED_CALL_COINS = 4;
+  COIN_ORIGIN_DEFERRED_CALL_REGISTER = 5;
+  COIN_ORIGIN_DEFERRED_CALL_STORAGE_REFUND = 6;
+  COIN_ORIGIN_ENDORSEMENT_REWARD = 7;
+  COIN_ORIGIN_ENDORSED_REWARD = 8;
+  COIN_ORIGIN_SLASH = 9;
+  COIN_ORIGIN_OP_ROLL_BUY = 10;
+  COIN_ORIGIN_OP_ROLL_SELL = 11;
+  COIN_ORIGIN_OP_CALLSC_COINS = 12;
+  COIN_ORIGIN_READ_ONLY_FN_CALL_FEES = 13;
+  COIN_ORIGIN_READ_ONLY_FN_CALL_COINS = 14;
+  COIN_ORIGIN_READ_ONLY_BYTECODE_EXEC_FEES = 15;
+  COIN_ORIGIN_SET_BYTECODE_STORAGE = 16;
+  COIN_ORIGIN_ABI_CALL_COINS = 17;
+  COIN_ORIGIN_ABI_TRANSFER_COINS = 18;
+  COIN_ORIGIN_ABI_TRANSFER_FOR_COINS = 19;
+  COIN_ORIGIN_ABI_SEND_MSG_COINS = 20;
+  COIN_ORIGIN_ABI_SEND_MSG_FEES = 21;
+  COIN_ORIGIN_OP_ROLL_SELL_DEFERRED_MAS = 22;
+  COIN_ORIGIN_OP_EXECUTESC_FEES = 23;
+  COIN_ORIGIN_OP_TRANSACTION_COINS = 24;
+  COIN_ORIGIN_OP_TRANSACTION_FEES = 25;
+  COIN_ORIGIN_ASYNC_MSG_COINS = 26;
+  COIN_ORIGIN_ASYNC_MSG_CANCEL = 27;
+  COIN_ORIGIN_CREATE_SC_STORAGE = 28;
+  COIN_ORIGIN_DATASTORE_STORAGE = 29;
+  COIN_ORIGIN_DEFERRED_CREDIT = 30;
+}
+
+message CoinOriginPb {
+  // If `kind` is UNSPECIFIED and `other_code != 0`, the origin is the
+  // forward-compat `Other { code }` Rust variant. Otherwise `kind`
+  // carries the value.
+  CoinOriginKindPb kind = 1;
+  uint32 other_code = 2;
+}
+
+message StoredTransferPb {
+  SlotPb slot = 1;
+  uint32 index_in_slot = 2;
+  string id = 3;                      // opaque, keep as string
+  string block_id = 4;                // display form (may be empty)
+  bool has_block_id = 5;
+  int64 block_timestamp_ms = 6;
+  string from = 7;                    // display form
+  bool has_from = 8;
+  string to = 9;                      // display form
+  bool has_to = 10;
+  TransferValuePb value = 11;
+  CoinOriginPb origin = 12;
+  string operation_id = 13;
+  bool has_operation_id = 14;
+  string async_msg_id = 15;
+  bool has_async_msg_id = 16;
+  string deferred_call_id = 17;
+  bool has_deferred_call_id = 18;
+  string denunciation_index = 19;
+  bool has_denunciation_index = 20;
+  bool is_final = 21;
+  int64 first_seen_ts_ms = 22;
+}
+
+// -----------------------------------------------------------------------
+// Async pool + deferred calls
+// -----------------------------------------------------------------------
+
+// Lifecycle tag for an async message. Mirrors `model::AsyncMsgState`.
+enum AsyncMsgStatePb {
+  ASYNC_MSG_STATE_PENDING = 0;
+  ASYNC_MSG_STATE_EXECUTED = 1;
+  ASYNC_MSG_STATE_CANCELLED = 2;
+  // Catch-all for a DELETE we couldn't classify as EXECUTED or CANCELLED.
+  ASYNC_MSG_STATE_CONSUMED = 3;
+}
+
+// Filter trigger on an async message.
+message AsyncTriggerPb {
+  string address = 1;
+  string datastore_key_hex = 2;
+  bool has_datastore_key = 3;
+}
+
+message StoredAsyncMsgPb {
+  string id = 1;
+  bytes sender_key = 2;
+  bool has_sender = 3;
+  bytes destination_key = 4;
+  bool has_destination = 5;
+  string handler = 6;
+  bool has_handler = 7;
+  uint64 coins_nmas = 8;
+  uint64 max_gas = 9;
+  uint64 fee_nmas = 10;
+  SlotPb emission_slot = 11;
+  bool has_emission_slot = 12;
+  SlotPb validity_start = 13;
+  bool has_validity_start = 14;
+  SlotPb validity_end = 15;
+  bool has_validity_end = 16;
+  AsyncMsgStatePb state = 17;
+  SlotPb last_slot = 18;
+  bool has_last_slot = 19;
+  string data_hex = 20;
+  bool has_data = 21;
+  AsyncTriggerPb trigger = 22;
+  bool has_trigger = 23;
+  bool can_be_executed = 24;
+  int64 first_seen_ts_ms = 25;
+  int64 last_updated_ts_ms = 26;
+}
+
+// Lifecycle tag for a deferred call. Mirrors `model::DeferredCallState`.
+enum DeferredCallStatePb {
+  DEFERRED_CALL_STATE_REGISTERED = 0;
+  DEFERRED_CALL_STATE_EXECUTED = 1;
+  DEFERRED_CALL_STATE_FAILED = 2;
+  DEFERRED_CALL_STATE_CANCELLED = 3;
+}
+
+message StoredDeferredCallPb {
+  string id = 1;
+  bytes sender_key = 2;
+  bool has_sender = 3;
+  bytes target_address_key = 4;
+  bool has_target_address = 5;
+  string target_function = 6;
+  bool has_target_function = 7;
+  string parameter_hex = 8;
+  bool has_parameter_hex = 9;
+  uint64 coins_nmas = 10;
+  uint64 max_gas = 11;
+  SlotPb target_slot = 12;
+  bool has_target_slot = 13;
+  SlotPb registered_slot = 14;
+  bool has_registered_slot = 15;
+  DeferredCallStatePb state = 16;
+  SlotPb last_slot = 17;
+  bool has_last_slot = 18;
+  int64 first_seen_ts_ms = 19;
+  int64 last_updated_ts_ms = 20;
+}
+

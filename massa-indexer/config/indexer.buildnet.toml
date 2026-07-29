@@ -1,0 +1,25 @@
+# Massa indexer V2 (MVP-v0) — buildnet config template.
+#
+# For local testing against the node on 127.0.0.1:33037, just copy this to
+# config/indexer.toml and adjust `db.path`.
+
+[general]
+network = "buildnet"
+
+[node]
+grpc_url = "http://127.0.0.1:33037"
+connect_timeout_ms = 5000
+keepalive_ms = 15000
+
+[db]
+path = "./data/rocksdb"
+compression = "lz4"
+write_buffer_size_mb = 64
+
+[rest]
+bind = "127.0.0.1:8080"
+cors = ["*"]
+sse_ring_buffer_size = 10000
+sse_heartbeat_secs = 20
+default_page_size = 50
+max_page_size = 500

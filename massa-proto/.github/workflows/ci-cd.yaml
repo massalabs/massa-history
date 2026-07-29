@@ -1,0 +1,43 @@
+name: CI/CD
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# This allows a subsequently queued workflow run to interrupt previous runs
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: bufbuild/buf-action@v1
+        with:
+          version: "1.47.2"
+          github_token: ${{ github.token }}
+          breaking_against: "https://github.com/${{ github.repository }}.git#branch=main"
+          push: false
+  trigger-remote-build:
+    needs: check
+    if: ${{ github.ref == 'refs/heads/main' }}
+    strategy:
+      matrix:
+        repo: ['massalabs/massa-proto-rs', 'massalabs/massa-proto-as']
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger proto bindings remote build
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.CI_PROTO_GENERATION }}
+          repository: ${{ matrix.repo }}
+          event-type: remote-build
+          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}"}'

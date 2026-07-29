@@ -1,0 +1,98 @@
+# Reference nginx reverse-proxy configuration for a Massa Indexer V2.
+#
+# Terminates TLS, applies rate limits, and forwards REST + SSE traffic to the
+# local indexer container. Install this as `/etc/nginx/sites-available/massa-indexer`
+# (or the Docker mount equivalent) and symlink it into `sites-enabled/`.
+#
+# Expected upstream:
+#   * indexer  -> 127.0.0.1:8080   (REST + SSE)
+#   * peer     -> 0.0.0.0:9443     (gRPC, exposed directly, NOT via nginx)
+#
+# Hosting behind Cloudflare? Set "real_ip_header CF-Connecting-IP" and trust
+# Cloudflare's IP ranges in the `set_real_ip_from` directive at the http{}
+# level so the rate limit keys by the actual client IP.
+
+# Two rate-limit zones: a generous one for normal REST reads, and a stricter
+# one for /v1/export/* which can be expensive on large ranges.
+limit_req_zone $binary_remote_addr zone=indexer_rest:10m rate=30r/s;
+limit_req_zone $binary_remote_addr zone=indexer_export:10m rate=2r/s;
+
+upstream massa_indexer {
+    server 127.0.0.1:8080;
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name indexer.example.com;
+
+    # Redirect to HTTPS.
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name indexer.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/indexer.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/indexer.example.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         "ECDHE+AESGCM:ECDHE+CHACHA20:!aNULL:!MD5";
+    ssl_prefer_server_ciphers on;
+
+    # Security headers
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    add_header X-Content-Type-Options   "nosniff" always;
+    add_header Referrer-Policy          "strict-origin-when-cross-origin" always;
+
+    server_tokens off;
+
+    # ---- routing --------------------------------------------------------------
+
+    # Health/OpenAPI are public and cheap; do not rate-limit them.
+    location = /v1/health       { proxy_pass http://massa_indexer; include /etc/nginx/conf.d/massa_proxy.inc; }
+    location = /v1/openapi.json { proxy_pass http://massa_indexer; include /etc/nginx/conf.d/massa_proxy.inc; }
+
+    # SSE streams: long-lived connections, buffering must be off.
+    location ~* ^/v1/(slots/stream|stream/.*) {
+        include /etc/nginx/conf.d/massa_proxy.inc;
+        proxy_pass            http://massa_indexer;
+        proxy_http_version    1.1;
+        proxy_buffering       off;
+        proxy_cache           off;
+        proxy_read_timeout    24h;
+        proxy_send_timeout    24h;
+        chunked_transfer_encoding on;
+    }
+
+    # Bulk exports: stricter limit to avoid anyone scraping CSVs in tight loops.
+    location ~* ^/v1/export/ {
+        limit_req zone=indexer_export burst=5 nodelay;
+        include /etc/nginx/conf.d/massa_proxy.inc;
+        proxy_pass http://massa_indexer;
+    }
+
+    # Everything else on the v1 surface.
+    location /v1/ {
+        limit_req zone=indexer_rest burst=60 nodelay;
+        include /etc/nginx/conf.d/massa_proxy.inc;
+        proxy_pass http://massa_indexer;
+    }
+
+    # Reject anything not under /v1/.
+    location / {
+        return 404;
+    }
+}
+
+# Save this file as /etc/nginx/conf.d/massa_proxy.inc:
+#
+#     proxy_set_header Host              $host;
+#     proxy_set_header X-Real-IP         $remote_addr;
+#     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+#     proxy_set_header X-Forwarded-Proto $scheme;
+#     proxy_connect_timeout  5s;
+#     proxy_read_timeout     60s;
+#     proxy_send_timeout     60s;

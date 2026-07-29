@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+# One concurrent run per branch; cancel stale pushes so the queue stays short.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # GCC 14+ dropped the implicit cstdint include; librocksdb-sys needs it.
+  CXXFLAGS: "-include cstdint"
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Rust backend — fmt, clippy, tests on the exact toolchain (1.81.0) used by
+  # the Dockerfile and pinned in massa-indexer/rust-toolchain.toml.
+  # --------------------------------------------------------------------------
+  backend:
+    name: backend (fmt + clippy + tests)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang cmake pkg-config protobuf-compiler
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.81.0"
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "massa-indexer -> target"
+
+      - name: cargo fmt --check
+        working-directory: massa-indexer
+        run: cargo fmt --check
+
+      - name: cargo clippy (deny warnings)
+        working-directory: massa-indexer
+        run: cargo clippy --all-targets --lib --tests -- -D warnings
+
+      - name: cargo test (lib + integration, no doctests)
+        working-directory: massa-indexer
+        # Doctests live inside auto-generated google.api.rs and were never
+        # meant to be compiled; we skip them explicitly like the local runbook.
+        run: cargo test --lib --tests
+
+  # --------------------------------------------------------------------------
+  # React frontend — type-check, unit tests, production build.
+  # --------------------------------------------------------------------------
+  frontend:
+    name: frontend (typecheck + tests + build)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: massa-explorer/package-lock.json
+
+      - name: npm ci
+        working-directory: massa-explorer
+        run: npm ci --no-audit --no-fund
+
+      - name: Type-check
+        working-directory: massa-explorer
+        run: npm run lint
+
+      - name: Unit tests
+        working-directory: massa-explorer
+        run: npm test
+
+      - name: Production build
+        working-directory: massa-explorer
+        run: npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: massa-explorer-dist
+          path: massa-explorer/dist/
+          retention-days: 7
+
+  # --------------------------------------------------------------------------
+  # Container images. Uses docker buildx so the multi-stage build can cache
+  # across runs via gha.
+  # --------------------------------------------------------------------------
+  docker:
+    name: docker images
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    needs: [ backend, frontend ]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build massa-indexer image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: massa-indexer/Dockerfile
+          push: false
+          load: true
+          tags: massa-indexer:ci
+          cache-from: type=gha,scope=indexer
+          cache-to:   type=gha,mode=max,scope=indexer
+
+      - name: Smoke-test massa-indexer image
+        run: |
+          # `show-config` exercises argv parsing + config validation without
+          # needing a live node. `healthcheck` exits 1 on a bogus URL, so we
+          # just assert that the binary at least runs.
+          docker run --rm massa-indexer:ci --version
+          docker run --rm massa-indexer:ci healthcheck \
+            --url http://127.0.0.1:1/v1/health --timeout-ms 200 || \
+            [ $? -eq 1 ]
+
+      - name: Build massa-explorer image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: massa-explorer/Dockerfile
+          push: false
+          load: true
+          tags: massa-explorer:ci
+          cache-from: type=gha,scope=explorer
+          cache-to:   type=gha,mode=max,scope=explorer
+
+      - name: Smoke-test massa-explorer image
+        run: |
+          cid=$(docker run -d -p 18080:8080 massa-explorer:ci)
+          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            sleep 1
+            if curl -fsS http://127.0.0.1:18080/healthz >/dev/null; then
+              echo "explorer up"; break
+            fi
+          done
+          curl -fsS http://127.0.0.1:18080/healthz
+          curl -fsS http://127.0.0.1:18080/config.js | head -n 3

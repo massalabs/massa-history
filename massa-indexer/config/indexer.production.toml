@@ -1,0 +1,55 @@
+# Massa Indexer V2 — production config template.
+#
+# This template ships inside the Docker image at
+# `/etc/massa-indexer/indexer.toml`. Override any field by bind-mounting your
+# own TOML onto that path, or by setting one of the `INDEXER_*` env vars
+# documented in `src/config.rs` (env wins over TOML).
+
+[general]
+# "mainnet" or "buildnet"; also the on-disk RocksDB network guard.
+network = "mainnet"
+
+[node]
+# Point this at your trusted Massa node's public gRPC endpoint. For the
+# reference Docker Compose setup the node runs as a sibling container at
+# `massa-node:33037`.
+grpc_url = "http://massa-node:33037"
+connect_timeout_ms = 5000
+keepalive_ms = 15000
+
+[db]
+# RocksDB home. The container image exposes `/data` as a VOLUME.
+path = "/data/rocksdb"
+compression = "lz4"
+# Bump this on nodes with >=8 GB RAM; 64 MB is the safe default for small VMs.
+write_buffer_size_mb = 128
+
+[rest]
+# Bind 0.0.0.0 so the container is reachable from the host / other services.
+# Always front this with nginx + TLS + rate-limiting; see `nginx/indexer.conf.sample`.
+bind = "0.0.0.0:8080"
+# Prefer an allow-list of domains over "*" in production (browsers still work,
+# curl/CLI tooling is unaffected).
+cors = ["*"]
+sse_ring_buffer_size = 10000
+sse_heartbeat_secs = 20
+default_page_size = 50
+max_page_size = 500
+
+[peer]
+# P2P mesh between sibling indexers so each can backfill from the
+# others. The unified scanner walks every slot from `last_final_slot`
+# down to (0,0) on every sweep, asking peers for any missing or
+# incomplete-FINAL slot. `scan_interval_ms` paces the inter-RPC
+# sleep — skip paths (slot already complete) are free.
+# Disable if you run a single instance.
+enabled = true
+bind = "0.0.0.0:9443"
+peer_id = ""            # defaults to $HOSTNAME
+scan_interval_ms = 50
+
+# Fill these in with the public gRPC addresses of your sibling indexers:
+# [peer.peers.east]
+# url = "https://indexer-east.example.com:9443"
+# [peer.peers.west]
+# url = "https://indexer-west.example.com:9443"

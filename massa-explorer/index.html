@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="robots" content="index,follow" />
+
+    <title>Massa Explorer</title>
+    <meta
+      name="description"
+      content="Open-source Massa blockchain explorer backed by the self-hostable Indexer V2."
+    />
+
+    <!-- Open Graph / social cards -->
+    <meta property="og:title" content="Massa Explorer" />
+    <meta
+      property="og:description"
+      content="Open-source Massa blockchain explorer backed by the self-hostable Indexer V2."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+
+    <!-- Runtime configuration (optional). Populated by an operator via a
+         bind-mount at /usr/share/nginx/html/config.js or a DeWeb deploy
+         override; falls back to the bundled defaults in src/lib/config.ts. -->
+    <script src="/config.js"></script>
+  </head>
+  <body class="bg-bg text-fg font-sans">
+    <noscript>
+      <div style="padding: 2rem; font-family: system-ui, sans-serif">
+        <h1>Massa Explorer</h1>
+        <p>
+          This explorer is a JavaScript single-page application. Please enable
+          JavaScript, or query the indexer REST API directly — it is documented
+          at <code>/v1/openapi.json</code> on any Massa Indexer V2 instance.
+        </p>
+      </div>
+    </noscript>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

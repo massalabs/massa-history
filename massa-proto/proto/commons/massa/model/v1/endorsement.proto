@@ -1,0 +1,75 @@
+// Copyright (c) 2023 MASSA LABS <info@massa.net>
+
+syntax = "proto3";
+
+package massa.model.v1;
+
+import "massa/model/v1/slot.proto";
+
+option csharp_namespace = "Com.Massa.Model.v1";
+option go_package = "github.com/massalabs/massa/model/v1;v1";
+option java_multiple_files = true;
+option java_package = "com.massa.model.v1";
+option objc_class_prefix = "MMODEL";
+option php_namespace = "Com\\Massa\\Model\\V1";
+option ruby_package = "Com::Massa::Model::V1";
+option swift_prefix = "MMODEL";
+
+// An endorsement, as sent in the network
+message Endorsement {
+  // Slot in which the endorsement can be included
+  Slot slot = 1;
+  // Endorsement index inside the including block
+  uint32 index = 2;
+  // Hash of endorsed block
+  // This is the parent in thread `self.slot.thread` of the block in which the endorsement is included
+  string endorsed_block = 3;
+}
+
+// Signed endorsement
+message SignedEndorsement {
+  // Endorsement
+  Endorsement content = 1;
+  // A cryptographically generated value using `serialized_data` and a public key.
+  string signature = 2;
+  // The public-key component used in the generation of the signature
+  string content_creator_pub_key = 3;
+  // Derived from the same public key used to generate the signature
+  string content_creator_address = 4;
+  // A secure hash of the non-malleable contents of a deterministic binary representation of the block header
+  string secure_hash = 5;
+  // The size of the serialized endorsement in bytes
+  uint64 serialized_size = 6;
+}
+
+// EndorsementIds holds endorsements ids
+message EndorsementIds {
+  // Endorsements ids
+  repeated string endorsement_ids = 1;
+}
+
+// A wrapper around an endorsement with its metadata
+message EndorsementWrapper {
+  // Whether the endorsement is still in pool
+  bool in_pool = 1;
+  // The endorsement appears in `in_blocks`
+  // If it appears in multiple blocks, these blocks are in different cliques
+  repeated string in_blocks = 2;
+  // Whether the the endorsement is final (for example in a final block)
+  bool is_final = 3;
+  // The endorsement itself
+  SignedEndorsement endorsement = 4;
+}
+
+// Informations about an endorsement with its metadata
+message EndorsementInfo {
+  // The endorsement id
+  string endorsement_id = 1;
+  // Whether the endorsement is still in pool
+  bool in_pool = 2;
+  // The endorsement appears in `in_blocks`
+  // If it appears in multiple blocks, these blocks are in different cliques
+  repeated string in_blocks = 3;
+  // Whether the the endorsement is final (for example in a final block)
+  bool is_final = 4;
+}
