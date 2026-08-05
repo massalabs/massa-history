@@ -26,7 +26,8 @@ import "indexer/v1/storage.proto";
 service Peer {
   // Cheap health + identity probe. Used at config-load time to fail fast
   // on network/version mismatches, and during backfill as a "is this peer
-  // still alive" ping.
+  // still alive" ping. Callers SHOULD fill `HealthRequest` with their own
+  // identity so the callee can register a reverse path (see SyncSession).
   rpc GetHealth(HealthRequest) returns (HealthResponse);
 
   // Fetch a single FINAL slot's contents. The caller signals which
@@ -41,12 +42,29 @@ service Peer {
   // bulk-backfill fast path; the caller still applies each response via
   // the same merge logic as `GetFinalSlot`.
   rpc StreamFinalSlots(StreamFinalSlotsRequest) returns (stream FinalSlotResponse);
+
+  // Bidirectional session multiplexed on the caller's outbound TCP/HTTP2
+  // connection. After `SessionHello`, either side may issue
+  // `FinalSlotRequest` / `FinalSlotResponse` pairs (correlated by `id`).
+  // This is how the *callee* pulls history from the *caller* without a
+  // second dial — one configured link yields mutual sync. When both
+  // sides also dial each other, peers are keyed by `peer_id` and each
+  // logical peer is contacted at most once per slot fetch.
+  rpc SyncSession(stream SessionMessage) returns (stream SessionMessage);
 }
 
 // -----------------------------------------------------------------------
 // Health
 // -----------------------------------------------------------------------
-message HealthRequest {}
+message HealthRequest {
+  // Caller's `peer_id` (same value advertised in its own HealthResponse).
+  string caller_peer_id = 1;
+  // Caller's network name (must match callee to be useful for reverse sync).
+  string caller_network = 2;
+  // Optional URL where the caller accepts peer gRPC (unary fallback if the
+  // SyncSession drops). May be empty when only session-reverse is used.
+  string advertise_url = 3;
+}
 
 message HealthResponse {
   // Opaque, operator-chosen identifier (e.g. hostname). Logged on both
@@ -164,4 +182,26 @@ message StreamFinalSlotsRequest {
   FinalSlotParts parts = 5;
   // Cap on slots returned; server may send fewer. 0 = server default.
   uint32 limit = 6;
+}
+
+// -----------------------------------------------------------------------
+// Bidirectional sync session
+// -----------------------------------------------------------------------
+
+message SessionHello {
+  string peer_id = 1;
+  string network = 2;
+  string build_version = 3;
+  uint32 schema_version = 4;
+  string advertise_url = 5;
+}
+
+message SessionMessage {
+  // Correlation id for request/response pairs. Hello uses id=0.
+  uint64 id = 1;
+  oneof body {
+    SessionHello hello = 2;
+    FinalSlotRequest slot_request = 3;
+    FinalSlotResponse slot_response = 4;
+  }
 }

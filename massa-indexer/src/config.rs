@@ -79,6 +79,12 @@ pub struct Peer {
     /// indexer's hostname or `"indexer"`.
     #[serde(default)]
     pub peer_id: String,
+    /// Public (or LAN) URL where *this* indexer accepts peer gRPC. Sent to
+    /// remotes in `GetHealth` / `SyncSession` hello so they can open a
+    /// reverse unary path if needed. Prefer the address other sites should
+    /// dial (e.g. `http://78.x.x.x:9443`). Empty = session-reverse only.
+    #[serde(default)]
+    pub advertise_url: String,
     /// Connected peers, keyed by a friendly short name.
     #[serde(default)]
     pub peers: std::collections::BTreeMap<String, PeerEntry>,
@@ -101,6 +107,7 @@ impl Default for Peer {
             enabled: default_peer_enabled(),
             bind: default_peer_bind(),
             peer_id: String::new(),
+            advertise_url: String::new(),
             peers: Default::default(),
             scan_interval_ms: default_scan_interval_ms(),
         }

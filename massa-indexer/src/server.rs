@@ -7,7 +7,8 @@ use crate::{
     ingest::{Event, Ingest},
     model::MetaRow,
     peer::{
-        client::{PeerConfig as PeerClientConfig, PeerPool},
+        client::{LocalPeerIdentity, PeerConfig as PeerClientConfig, PeerPool},
+        registry::PeerRegistry,
         run_backfill, serve_peer, BackfillConfig, PeerService,
     },
     proto::indexer::v1::FinalSlotParts,
@@ -139,6 +140,14 @@ pub async fn run(config: Config) -> Result<()> {
     // Peer server (§8) — optional. A misconfigured / failing peer layer
     // shouldn't take the indexer down, so we tolerate bind errors with a
     // warning.
+    let peer_registry = PeerRegistry::new();
+    let peer_id = if config.peer.peer_id.is_empty() {
+        std::env::var("HOSTNAME").unwrap_or_else(|_| "indexer".into())
+    } else {
+        config.peer.peer_id.clone()
+    };
+    let advertise_url = config.peer.advertise_url.clone();
+
     let peer_shutdown = if config.peer.enabled {
         let bind_str = config.peer.bind.clone();
         let bind_addr: std::net::SocketAddr = bind_str.parse().unwrap_or_else(|e| {
@@ -149,20 +158,22 @@ pub async fn run(config: Config) -> Result<()> {
             );
             "127.0.0.1:0".parse().unwrap()
         });
-        let peer_id = if config.peer.peer_id.is_empty() {
-            std::env::var("HOSTNAME").unwrap_or_else(|_| "indexer".into())
-        } else {
-            config.peer.peer_id.clone()
-        };
         let service = PeerService::new(
             db.clone(),
             peer_id.clone(),
             config.general.network.clone(),
             BUILD_VERSION,
+            advertise_url.clone(),
+            peer_registry.clone(),
         );
         match serve_peer(service, bind_addr).await {
             Ok((actual, _handle, shutdown)) => {
-                info!(addr = %actual, peer_id = %peer_id, "peer gRPC ready");
+                info!(
+                    addr = %actual,
+                    peer_id = %peer_id,
+                    advertise_url = %advertise_url,
+                    "peer gRPC ready"
+                );
                 Some(shutdown)
             }
             Err(e) => {
@@ -175,13 +186,11 @@ pub async fn run(config: Config) -> Result<()> {
         None
     };
 
-    // Unified backfill worker — peers only. Walks `last_final_slot`
-    // → (0,0) repeatedly and asks peers to fill any incomplete or
-    // missing FINAL slots. AWS DDB is *not* consulted from this path
-    // (see §9 of ARCHITECTURE.md): operators run the one-shot
-    // importer below to bulk-load the legacy archive instead.
-    let has_peers = config.peer.enabled && !config.peer.peers.is_empty();
-    if has_peers {
+    // Unified backfill worker — peers + inbound SyncSessions. Walks
+    // `last_final_slot` → (0,0) and asks each logical peer_id at most
+    // once per slot. Starts even with an empty static peer list so a
+    // remote that dials us can still feed reverse pulls via SyncSession.
+    if config.peer.enabled {
         let peer_cfgs: Vec<PeerClientConfig> = config
             .peer
             .peers
@@ -191,7 +200,19 @@ pub async fn run(config: Config) -> Result<()> {
                 url: entry.url.clone(),
             })
             .collect();
-        let pool = PeerPool::new(peer_cfgs, config.general.network.clone());
+        let local = LocalPeerIdentity {
+            peer_id: peer_id.clone(),
+            network: config.general.network.clone(),
+            build_version: BUILD_VERSION.to_string(),
+            advertise_url: advertise_url.clone(),
+        };
+        let pool = PeerPool::new(
+            peer_cfgs,
+            local,
+            db.clone(),
+            peer_registry.clone(),
+            config.general.network.clone(),
+        );
         let backfill_cfg = BackfillConfig {
             rate_limit: Duration::from_millis(config.peer.scan_interval_ms.max(1)),
             wrap_pause: Duration::from_secs(30),
@@ -211,7 +232,7 @@ pub async fn run(config: Config) -> Result<()> {
             run_backfill(db_for_bf, pool, tx_for_bf, backfill_cfg, Some(m_for_bf)).await;
         });
     } else {
-        info!("backfill worker skipped (no peers configured)");
+        info!("backfill worker skipped (peer layer disabled)");
     }
 
     // AWS DDB **one-shot importer** (§9). When `[legacy_ddb] enabled

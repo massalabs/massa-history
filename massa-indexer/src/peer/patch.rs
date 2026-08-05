@@ -376,26 +376,20 @@ pub fn apply_peer_patch(
         state.sc_event_count = resp.sc_event_count;
         state.completeness.exec_output_final = true;
         out.exec_applied = true;
-    } else if !state.completeness.exec_output_final
-        && (state.completeness.block_body_stored || state.is_miss)
-    {
-        // Peer asserted FINAL and we have the block (or miss) but no exec
-        // payload — settle the flag so catch-up can walk past this slot.
-        state.completeness.exec_output_final = true;
     }
+    // Note: we intentionally do NOT settle `exec_output_final` on an empty
+    // exec payload. Partial-part fetches (block-only, then exec-only) are
+    // valid, and an empty exec section usually means "not requested" rather
+    // than "peer asserts none". The backfill walker already skips FINAL
+    // slots that have `block_body_stored` / `is_miss`, so empty-exec settle
+    // is not required to prevent re-query storms.
 
     // --- Transfers --------------------------------------------------------
-    // Same empty-list semantics as exec: a FINAL peer with no transfer
-    // rows means "none for this slot", not "try me again next sweep".
     let transfers_part_present = !resp.transfers.is_empty() || !resp.deferred_calls.is_empty();
     if transfers_part_present && !state.completeness.transfers_stored {
         apply_transfers_part(db, resp, now_ms)?;
         state.completeness.transfers_stored = true;
         out.transfers_applied = true;
-    } else if !state.completeness.transfers_stored
-        && (state.completeness.block_body_stored || state.is_miss)
-    {
-        state.completeness.transfers_stored = true;
     }
 
     // --- Final block status propagation ----------------------------------

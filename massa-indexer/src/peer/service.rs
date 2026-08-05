@@ -13,14 +13,18 @@ use crate::{
     codec,
     db::Db,
     model::SlotState,
+    peer::registry::PeerRegistry,
+    peer::session::{make_hello, SessionBridge},
     proto::indexer::v1::{
         peer_server::{Peer, PeerServer},
-        FinalSlotParts, FinalSlotRequest, FinalSlotResponse, HealthRequest, HealthResponse,
-        StreamFinalSlotsRequest,
+        session_message::Body, FinalSlotParts, FinalSlotRequest, FinalSlotResponse, HealthRequest,
+        HealthResponse, SessionMessage, StreamFinalSlotsRequest,
     },
     schema::SCHEMA_VERSION,
 };
+use futures::StreamExt;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -35,6 +39,8 @@ pub struct PeerService {
     pub peer_id: String,
     pub network: String,
     pub build_version: String,
+    pub advertise_url: String,
+    pub registry: PeerRegistry,
     /// Upper bound on slots returned from `StreamFinalSlots` in a single call.
     /// Keeps a misbehaving peer from fetching the entire chain in one RPC.
     pub stream_limit_cap: u32,
@@ -46,12 +52,16 @@ impl PeerService {
         peer_id: impl Into<String>,
         network: impl Into<String>,
         build_version: impl Into<String>,
+        advertise_url: impl Into<String>,
+        registry: PeerRegistry,
     ) -> Self {
         Self {
             db,
             peer_id: peer_id.into(),
             network: network.into(),
             build_version: build_version.into(),
+            advertise_url: advertise_url.into(),
+            registry,
             stream_limit_cap: 512,
         }
     }
@@ -61,8 +71,25 @@ impl PeerService {
 impl Peer for PeerService {
     async fn get_health(
         &self,
-        _req: Request<HealthRequest>,
+        req: Request<HealthRequest>,
     ) -> Result<Response<HealthResponse>, Status> {
+        let caller = req.into_inner();
+        // Register reverse unary path when the caller advertises a URL and
+        // shares our network. SyncSession (preferred) is registered separately.
+        if !caller.caller_peer_id.is_empty()
+            && caller.caller_peer_id != self.peer_id
+            && (caller.caller_network.is_empty() || caller.caller_network == self.network)
+        {
+            if !caller.advertise_url.is_empty() {
+                self.registry
+                    .add_url(&caller.caller_peer_id, &caller.advertise_url);
+                debug!(
+                    peer = %caller.caller_peer_id,
+                    url = %caller.advertise_url,
+                    "registered caller advertise_url from GetHealth"
+                );
+            }
+        }
         let last = self
             .db
             .read_last_final_slot()
@@ -152,13 +179,138 @@ impl Peer for PeerService {
 
         Ok(Response::new(ReceiverStream::new(rx)))
     }
+
+    type SyncSessionStream =
+        Pin<Box<dyn futures::Stream<Item = Result<SessionMessage, Status>> + Send + 'static>>;
+
+    async fn sync_session(
+        &self,
+        req: Request<tonic::Streaming<SessionMessage>>,
+    ) -> Result<Response<Self::SyncSessionStream>, Status> {
+        let mut inbound = req.into_inner();
+        // First message must be Hello from the caller.
+        let first = inbound
+            .next()
+            .await
+            .ok_or_else(|| Status::invalid_argument("sync session: empty stream"))?
+            .map_err(|e| Status::invalid_argument(format!("sync session: {e}")))?;
+        let hello = match first.body {
+            Some(Body::Hello(h)) => h,
+            _ => {
+                return Err(Status::invalid_argument(
+                    "sync session: first message must be SessionHello",
+                ))
+            }
+        };
+        if hello.peer_id.is_empty() {
+            return Err(Status::invalid_argument("sync session: empty peer_id"));
+        }
+        if !hello.network.is_empty() && hello.network != self.network {
+            return Err(Status::failed_precondition(format!(
+                "sync session: network mismatch (got {}, expected {})",
+                hello.network, self.network
+            )));
+        }
+        if hello.peer_id == self.peer_id {
+            return Err(Status::invalid_argument("sync session: self-dial refused"));
+        }
+        if !hello.advertise_url.is_empty() {
+            self.registry.add_url(&hello.peer_id, &hello.advertise_url);
+        }
+
+        let (out_tx, out_rx) = mpsc::channel::<SessionMessage>(32);
+        let (sink_tx, sink_rx) = mpsc::channel::<Result<SessionMessage, Status>>(32);
+        // Reply with our own hello so the caller learns our id too.
+        let _ = sink_tx
+            .send(Ok(make_hello(
+                &self.peer_id,
+                &self.network,
+                &self.build_version,
+                SCHEMA_VERSION,
+                &self.advertise_url,
+            )))
+            .await;
+
+        let bridge = SessionBridge::new(hello.peer_id.clone(), out_tx);
+        self.registry.set_session(&hello.peer_id, bridge.clone());
+        info!(
+            peer = %hello.peer_id,
+            advertise = %hello.advertise_url,
+            "sync session established (inbound) — reverse pull enabled"
+        );
+
+        let db = self.db.clone();
+        let registry = self.registry.clone();
+        tokio::spawn(async move {
+            let mut out_rx = out_rx;
+            let mut inbound = inbound;
+            let peer_id = bridge.peer_id().to_string();
+            let bridge_id = bridge.id();
+            loop {
+                tokio::select! {
+                    maybe_out = out_rx.recv() => {
+                        match maybe_out {
+                            Some(msg) => {
+                                if sink_tx.send(Ok(msg)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            None => break,
+                        }
+                    }
+                    maybe_in = inbound.next() => {
+                        match maybe_in {
+                            Some(Ok(msg)) => {
+                                match msg.body {
+                                    Some(Body::SlotRequest(req)) => {
+                                        let parts = req.parts.unwrap_or_default();
+                                        let thread = match u8::try_from(req.thread) {
+                                            Ok(t) => t,
+                                            Err(_) => continue,
+                                        };
+                                        let resp = match build_final_slot_response(
+                                            &db, req.period, thread, &parts,
+                                        ) {
+                                            Ok(r) => r,
+                                            Err(e) => {
+                                                warn!(error = %e, "inbound sync session serve slot");
+                                                continue;
+                                            }
+                                        };
+                                        let _ = sink_tx.send(Ok(SessionMessage {
+                                            id: msg.id,
+                                            body: Some(Body::SlotResponse(resp)),
+                                        })).await;
+                                    }
+                                    Some(Body::SlotResponse(resp)) => {
+                                        bridge.complete(msg.id, resp);
+                                    }
+                                    Some(Body::Hello(_)) | None => {}
+                                }
+                            }
+                            Some(Err(e)) => {
+                                warn!(peer = %peer_id, error = %e, "inbound sync session error");
+                                break;
+                            }
+                            None => break,
+                        }
+                    }
+                }
+            }
+            registry.clear_session_by_id(&peer_id, bridge_id);
+            info!(peer = %peer_id, "inbound sync session closed");
+        });
+
+        let stream = ReceiverStream::new(sink_rx);
+        Ok(Response::new(Box::pin(stream) as Self::SyncSessionStream))
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Response building
 // ---------------------------------------------------------------------------
 
-fn build_final_slot_response(
+pub(crate) fn build_final_slot_response(
     db: &Db,
     period: u64,
     thread: u8,

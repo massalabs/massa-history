@@ -65,7 +65,7 @@ impl Instance {
         let dir = tempfile::tempdir().unwrap();
         let db = Db::open(dir.path(), "lz4", 4).unwrap();
         let sse = SseHub::new(64);
-        let service = PeerService::new(db.clone(), name, network, "massa-indexer test");
+        let service = PeerService::new(db.clone(), name, network, "massa-indexer test", "", massa_indexer::peer::PeerRegistry::new());
         let (addr, handle, shutdown) = serve_peer(service, "127.0.0.1:0".parse().unwrap())
             .await
             .expect("peer server bind");
@@ -243,13 +243,10 @@ async fn backfill_missing_slot_from_peer() {
 
     let (block_id, op_id) = seed_final_slot(&a.db, 100, 5, "trailA");
 
-    let pool = PeerPool::new(
-        vec![PeerConfig {
+    let pool = PeerPool::with_db(vec![PeerConfig {
             name: "A".into(),
             url: a.url(),
-        }],
-        network,
-    );
+        }], network, a.db.clone());
 
     let resp = pool
         .fetch_final_slot(100, 5, all_parts())
@@ -291,13 +288,10 @@ async fn fork_trail_mismatch_keeps_local() {
     let (a_block, _) = seed_final_slot(&a.db, 50, 0, "trailA");
     let (_b_block, _) = seed_final_slot(&b.db, 50, 0, "trailB");
 
-    let pool = PeerPool::new(
-        vec![PeerConfig {
+    let pool = PeerPool::with_db(vec![PeerConfig {
             name: "B".into(),
             url: b.url(),
-        }],
-        network,
-    );
+        }], network, b.db.clone());
     let resp = pool
         .fetch_final_slot(50, 0, all_parts())
         .await
@@ -333,8 +327,7 @@ async fn falls_back_when_one_peer_is_down() {
         u
     };
 
-    let pool = PeerPool::new(
-        vec![
+    let pool = PeerPool::with_db(vec![
             PeerConfig {
                 name: "dead".into(),
                 url: dead_url,
@@ -345,6 +338,7 @@ async fn falls_back_when_one_peer_is_down() {
             },
         ],
         network,
+        live.db.clone(),
     );
     let resp = pool
         .fetch_final_slot(77, 1, all_parts())
@@ -361,12 +355,13 @@ async fn rejects_peer_with_wrong_network() {
     seed_final_slot(&mainnet_peer.db, 9, 0, "trailMain");
 
     // Caller expects buildnet → should skip the mainnet peer and return Ok(None).
-    let pool = PeerPool::new(
+    let pool = PeerPool::with_db(
         vec![PeerConfig {
             name: "mainnet_one".into(),
             url: mainnet_peer.url(),
         }],
         "buildnet",
+        mainnet_peer.db.clone(),
     );
     let got = pool.fetch_final_slot(9, 0, all_parts()).await.unwrap();
     assert!(
@@ -389,12 +384,13 @@ async fn parent_gap_cascade() {
     // A only has one final slot.
     seed_final_slot(&a.db, 100, 0, "trailA");
 
-    let pool = PeerPool::new(
+    let pool = PeerPool::with_db(
         vec![PeerConfig {
             name: "A".into(),
             url: a.url(),
         }],
         network,
+        a.db.clone(),
     );
 
     // Step 1: pull (100, 0) → stubs (99, 0) on B.
@@ -427,13 +423,10 @@ async fn applying_same_patch_twice_is_idempotent() {
     let b = Instance::spawn("B", network).await;
     let (_, _) = seed_final_slot(&a.db, 1, 0, "trailX");
 
-    let pool = PeerPool::new(
-        vec![PeerConfig {
+    let pool = PeerPool::with_db(vec![PeerConfig {
             name: "A".into(),
             url: a.url(),
-        }],
-        network,
-    );
+        }], network, a.db.clone());
     let resp = Arc::new(
         pool.fetch_final_slot(1, 0, all_parts())
             .await
@@ -463,13 +456,10 @@ async fn partial_parts_fill() {
     let b = Instance::spawn("B", network).await;
     seed_final_slot(&a.db, 11, 0, "trailA");
 
-    let pool = PeerPool::new(
-        vec![PeerConfig {
+    let pool = PeerPool::with_db(vec![PeerConfig {
             name: "A".into(),
             url: a.url(),
-        }],
-        network,
-    );
+        }], network, a.db.clone());
     let parts = FinalSlotParts {
         block: false,
         exec_output: true,
@@ -544,13 +534,10 @@ async fn cumulative_parts_fill() {
     let b = Instance::spawn("B", network).await;
     seed_final_slot(&a.db, 101, 0, "trail_cum");
 
-    let pool = PeerPool::new(
-        vec![PeerConfig {
+    let pool = PeerPool::with_db(vec![PeerConfig {
             name: "A".into(),
             url: a.url(),
-        }],
-        network,
-    );
+        }], network, a.db.clone());
 
     // First call: block only.
     let parts_block = FinalSlotParts {
@@ -617,13 +604,10 @@ async fn peer_unknown_slot_is_noop() {
     let a = Instance::spawn("A", network).await; // empty
     let b = Instance::spawn("B", network).await; // empty
 
-    let pool = PeerPool::new(
-        vec![PeerConfig {
+    let pool = PeerPool::with_db(vec![PeerConfig {
             name: "A".into(),
             url: a.url(),
-        }],
-        network,
-    );
+        }], network, a.db.clone());
     // Pool hides final_known=false as a `None` result.
     let opt = pool.fetch_final_slot(200, 0, all_parts()).await.unwrap();
     assert!(opt.is_none());
@@ -683,13 +667,10 @@ async fn stale_unknown_stub_is_upgraded() {
 
     // Peer A learns about the slot.
     seed_final_slot(&a.db, 301, 0, "trail_stub");
-    let pool = PeerPool::new(
-        vec![PeerConfig {
+    let pool = PeerPool::with_db(vec![PeerConfig {
             name: "A".into(),
             url: a.url(),
-        }],
-        network,
-    );
+        }], network, a.db.clone());
     let resp = pool
         .fetch_final_slot(301, 0, all_parts())
         .await
@@ -795,13 +776,10 @@ async fn backfill_denunciations_async_and_deferred() {
     .unwrap();
 
     // B pulls all parts from A.
-    let pool = PeerPool::new(
-        vec![PeerConfig {
+    let pool = PeerPool::with_db(vec![PeerConfig {
             name: "A".into(),
             url: a.url(),
-        }],
-        network,
-    );
+        }], network, a.db.clone());
     let resp = pool
         .fetch_final_slot(slot.period, slot.thread, all_parts())
         .await

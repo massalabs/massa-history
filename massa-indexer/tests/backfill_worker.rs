@@ -132,7 +132,7 @@ fn seed_final_slot(db: &Db, period: u64, thread: u8, trail: &str) -> BlockId {
 }
 
 async fn start_peer_server(db: Db, network: &str) -> SocketAddr {
-    let service = PeerService::new(db, "source", network, "test");
+    let service = PeerService::new(db.clone(), "source", network, "test", "", massa_indexer::peer::PeerRegistry::new());
     let (addr, _handle, _shutdown) = serve_peer(service, "127.0.0.1:0".parse().unwrap())
         .await
         .unwrap();
@@ -178,12 +178,13 @@ async fn consumer_catches_up_from_source() {
     // touch the slot the seed actually populated; the scanner is
     // identical for every thread, and limiting the iteration keeps
     // the test from issuing pointless RPCs against threads 1-31.
-    let pool = PeerPool::new(
+    let pool = PeerPool::with_db(
         vec![PeerConfig {
             name: "source".into(),
             url: format!("http://{source_addr}"),
         }],
         network,
+        consumer_db.clone(),
     );
     let cfg = BackfillConfig {
         rate_limit: Duration::from_millis(0),

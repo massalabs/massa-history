@@ -227,7 +227,8 @@ async fn main() -> Result<()> {
                 eprintln!("no peers configured in [peer.peers.*]");
                 std::process::exit(1);
             }
-            let pool = PeerPool::new(peer_cfgs.clone(), cfg.general.network.clone());
+            let db = open_db(&cfg)?;
+            let pool = PeerPool::with_db(peer_cfgs.clone(), cfg.general.network.clone(), db);
             let probes = ix_cli::peers(&pool, &peer_cfgs).await;
             print!("{}", ix_cli::render_peers_table(&probes));
             if probes.iter().any(|p| p.status.is_err()) {
@@ -265,7 +266,7 @@ async fn main() -> Result<()> {
                 eprintln!("no peers configured in [peer.peers.*]");
                 std::process::exit(1);
             }
-            let pool = PeerPool::new(peer_cfgs, cfg.general.network.clone());
+            let pool = PeerPool::with_db(peer_cfgs, cfg.general.network.clone(), db.clone());
             let opts = ix_cli::ReplayOpts {
                 from,
                 to,

@@ -120,12 +120,8 @@ pub async fn run_backfill(
     cfg: BackfillConfig,
     metrics: Option<Arc<Metrics>>,
 ) {
-    if pool.is_empty() {
-        info!("backfill worker not starting: no peers configured");
-        return;
-    }
     info!(
-        peers = pool.len(),
+        static_peers = pool.len(),
         rate_limit_ms = cfg.rate_limit.as_millis() as u64,
         wrap_pause_s = cfg.wrap_pause.as_secs(),
         thread_count = cfg.thread_count,
@@ -135,6 +131,15 @@ pub async fn run_backfill(
     loop {
         if tx.is_closed() {
             break;
+        }
+
+        // Wait for at least one logical peer (static URL and/or inbound
+        // SyncSession). Sessions can appear after startup when a remote
+        // dials us — do not exit permanently on an empty pool.
+        if pool.is_empty() {
+            debug!("backfill: waiting for peers / sync sessions");
+            sleep(cfg.idle_pause).await;
+            continue;
         }
 
         let head = match db.read_last_final_slot() {
@@ -488,15 +493,17 @@ mod tests {
         }
     }
 
-    /// `run_backfill` should return immediately when no peers are configured.
+    /// `run_backfill` idles when no peers are configured and exits when
+    /// the ingest channel closes.
     #[tokio::test]
     async fn run_with_empty_pool_exits_quickly() {
         let (db, _dir) = open_db();
-        let pool = PeerPool::new(vec![], "test");
-        let (tx, _rx) = tokio::sync::mpsc::channel::<Event>(8);
-        // Run with a deadline — if the worker fails to bail out it'll
-        // be killed by the test runner, which surfaces as a hang.
+        let pool = PeerPool::with_db(vec![], "test", db.clone());
+        let (tx, rx) = tokio::sync::mpsc::channel::<Event>(8);
         let h = tokio::spawn(run_backfill(db, pool, tx, fast_cfg(), None));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Closing the receiver makes `tx.is_closed()` true inside the worker.
+        drop(rx);
         tokio::time::timeout(Duration::from_secs(2), h)
             .await
             .expect("run_backfill stuck with empty pool")
@@ -509,12 +516,13 @@ mod tests {
     #[tokio::test]
     async fn idle_when_no_last_final_slot() {
         let (db, _dir) = open_db();
-        let pool = PeerPool::new(
+        let pool = PeerPool::with_db(
             vec![crate::peer::client::PeerConfig {
                 name: "fake".into(),
                 url: "http://127.0.0.1:1".into(),
             }],
             "test",
+            db.clone(),
         );
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Event>(8);
         let h = tokio::spawn(run_backfill(db, pool, tx.clone(), fast_cfg(), None));
@@ -545,12 +553,13 @@ mod tests {
         // Pool must NOT be empty (otherwise visit_slot would early-exit
         // somewhere else). We point at an unreachable host so any RPC
         // would error — the test should NEVER actually call out.
-        let pool = PeerPool::new(
+        let pool = PeerPool::with_db(
             vec![crate::peer::client::PeerConfig {
                 name: "fake".into(),
                 url: "http://127.0.0.1:1".into(),
             }],
             "test",
+            db.clone(),
         );
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Event>(8);
         let cfg = fast_cfg();
@@ -565,12 +574,13 @@ mod tests {
     #[tokio::test]
     async fn visit_writes_nothing_when_no_source_has_data() {
         let (db, _dir) = open_db();
-        let pool = PeerPool::new(
+        let pool = PeerPool::with_db(
             vec![crate::peer::client::PeerConfig {
                 name: "fake".into(),
                 url: "http://127.0.0.1:1".into(),
             }],
             "test",
+            db.clone(),
         );
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Event>(8);
         let cfg = fast_cfg();

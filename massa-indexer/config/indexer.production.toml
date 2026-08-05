@@ -46,7 +46,12 @@ max_page_size = 500
 enabled = true
 bind = "0.0.0.0:9443"
 peer_id = ""            # defaults to $HOSTNAME
+# URL siblings should dial (sent in GetHealth / SyncSession hello).
+advertise_url = ""
 scan_interval_ms = 50
+# One outbound peer is enough for mutual sync via SyncSession on that
+# TCP link. If both sides also dial each other, peer_id dedup ensures
+# each logical peer is fetched at most once per slot.
 
 # Fill these in with the public gRPC addresses of your sibling indexers:
 # [peer.peers.east]

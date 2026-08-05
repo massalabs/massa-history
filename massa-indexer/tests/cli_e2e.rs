@@ -132,7 +132,7 @@ fn seed_final_slot(db: &Db, period: u64, thread: u8) -> BlockId {
 }
 
 async fn start_peer_server(db: Db, network: &str, peer_id: &str) -> SocketAddr {
-    let service = PeerService::new(db, peer_id, network, "test");
+    let service = PeerService::new(db.clone(), peer_id, network, "test", "", massa_indexer::peer::PeerRegistry::new());
     let (addr, _handle, shutdown) = serve_peer(service, "127.0.0.1:0".parse().unwrap())
         .await
         .unwrap();
@@ -160,7 +160,7 @@ async fn cli_peers_reports_ok_for_live_peer() {
             url: format!("http://{addr_b}"),
         },
     ];
-    let pool = PeerPool::new(cfgs.clone(), "integration");
+    let pool = PeerPool::with_db(cfgs.clone(), "integration", db.clone());
     let probes = cli::peers(&pool, &cfgs).await;
     assert_eq!(probes.len(), 2);
     // Order matches the configured order.
@@ -186,7 +186,7 @@ async fn cli_peers_reports_err_for_dead_peer() {
         // Port 1 should reliably refuse connections without privileges.
         url: "http://127.0.0.1:1".into(),
     }];
-    let pool = PeerPool::new(cfgs.clone(), "integration");
+    let pool = PeerPool::with_db(cfgs.clone(), "integration", db.clone());
     let probes = cli::peers(&pool, &cfgs).await;
     assert_eq!(probes.len(), 1);
     assert!(probes[0].status.is_err());
@@ -205,7 +205,7 @@ async fn cli_replay_pulls_slot_range_from_peer() {
         name: "src".into(),
         url: format!("http://{addr}"),
     }];
-    let pool = PeerPool::new(cfgs.clone(), "integration");
+    let pool = PeerPool::with_db(cfgs.clone(), "integration", db.clone());
 
     let opts = cli::ReplayOpts {
         from: (200, 0),
@@ -241,7 +241,7 @@ async fn cli_replay_pulls_slot_range_from_peer() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn cli_replay_rejects_no_peers() {
     let (db, _dir) = open_tmp();
-    let pool = PeerPool::new(vec![], "integration");
+    let pool = PeerPool::with_db(vec![], "integration", db.clone());
     let err = cli::replay(&db, &pool, &cli::ReplayOpts::default())
         .await
         .unwrap_err();
