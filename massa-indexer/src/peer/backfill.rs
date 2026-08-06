@@ -226,6 +226,12 @@ pub async fn run_backfill(
 
             let win_lo = period.saturating_sub(cfg.range_periods.saturating_sub(1));
 
+            // Cooperate with the runtime: the local scan below is hundreds
+            // of synchronous RocksDB gets with no await point, and deep
+            // sweeps chain millions of them. Without an explicit yield a
+            // cold sweep monopolises one worker thread for hours.
+            tokio::task::yield_now().await;
+
             // Local scan of the window: cheap RocksDB gets, unthrottled —
             // identical cost to the old per-slot skip path.
             let mut needy: Vec<(u64, u8)> = Vec::new();
