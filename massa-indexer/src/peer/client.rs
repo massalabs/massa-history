@@ -22,7 +22,10 @@ use crate::{
 use futures::StreamExt;
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 use tokio::sync::{mpsc, Mutex};
@@ -59,7 +62,9 @@ pub struct PeerHandle {
     local: LocalPeerIdentity,
     db: Db,
     registry: PeerRegistry,
-    session_started: Mutex<bool>,
+    /// True while an outbound SyncSession task is alive. Cleared on close so
+    /// the next `ensure_sync_session` / maintain loop reopens it forever.
+    session_started: Arc<AtomicBool>,
 }
 
 #[derive(Debug, Clone)]
@@ -92,7 +97,7 @@ impl PeerHandle {
             local,
             db,
             registry,
-            session_started: Mutex::new(false),
+            session_started: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -117,7 +122,7 @@ impl PeerHandle {
     }
 
     async fn drop_client(&self) {
-        *self.session_started.lock().await = false;
+        self.session_started.store(false, Ordering::SeqCst);
         self.client.lock().await.take();
     }
 
@@ -132,6 +137,8 @@ impl PeerHandle {
     pub async fn health(&self) -> Result<HealthResponse> {
         if let Some(h) = self.last_health.lock().await.clone() {
             if h.at.elapsed() < HEALTH_CACHE_TTL {
+                // Cached health still refreshes the SyncSession if it dropped.
+                self.ensure_sync_session().await;
                 return Ok(h.resp);
             }
         }
@@ -156,14 +163,20 @@ impl PeerHandle {
         Ok(resp)
     }
 
-    async fn ensure_sync_session(&self) {
-        let mut started = self.session_started.lock().await;
-        if *started {
+    /// Open outbound SyncSession if one is not already running.
+    /// Safe to call frequently; reconnects after close/drop forever.
+    pub async fn ensure_sync_session(&self) {
+        if self
+            .session_started
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
             return;
         }
         let mut client = match self.connect().await {
             Ok(c) => c,
             Err(e) => {
+                self.session_started.store(false, Ordering::SeqCst);
                 debug!(peer = %self.cfg.name, error = %e, "sync session: connect failed");
                 return;
             }
@@ -178,6 +191,7 @@ impl PeerHandle {
             &self.local.advertise_url,
         );
         if sink_tx.send(hello).await.is_err() {
+            self.session_started.store(false, Ordering::SeqCst);
             return;
         }
         // Temporary peer_id until hello ack / health — use config name; health
@@ -197,14 +211,17 @@ impl PeerHandle {
             Err(e) => {
                 warn!(peer = %self.cfg.name, error = %e, "sync session open failed");
                 self.registry.clear_session_by_id(&remote, bridge.id());
+                self.session_started.store(false, Ordering::SeqCst);
+                // Drop cached channel so the next attempt reconnects cleanly.
+                self.client.lock().await.take();
                 return;
             }
         };
-        *started = true;
         info!(peer = %remote, url = %self.cfg.url, "sync session established (outbound)");
 
         let db = self.db.clone();
         let registry = self.registry.clone();
+        let session_started = self.session_started.clone();
         let forward_tx = sink_tx;
         tokio::spawn(async move {
             // Merge bridge→remote messages into the tonic sink.
@@ -264,6 +281,7 @@ impl PeerHandle {
                 }
             }
             registry.clear_session_by_id(&peer_id, bridge_id);
+            session_started.store(false, Ordering::SeqCst);
             info!(peer = %peer_id, "outbound sync session closed");
         });
     }
@@ -308,6 +326,14 @@ pub struct PeerPool {
     db: Db,
     /// Network name we expect peers to report.
     pub expected_network: String,
+    /// Round-robin cursor for spreading load across dual transports.
+    route_rr: Arc<AtomicU64>,
+}
+
+/// One concrete transport to a logical peer.
+enum PeerRoute {
+    UnaryUrl(String),
+    Session(Arc<crate::peer::session::SessionBridge>),
 }
 
 impl PeerPool {
@@ -337,6 +363,39 @@ impl PeerPool {
             local,
             db,
             expected_network,
+            route_rr: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    /// Forever maintain outbound health + SyncSession for every configured
+    /// peer. Retries on failure with bounded backoff; never gives up.
+    pub async fn maintain_sessions(self) {
+        const BASE: Duration = Duration::from_secs(2);
+        const MAX: Duration = Duration::from_secs(30);
+        let mut backoff = BASE;
+        loop {
+            let mut any_ok = false;
+            for peer in self.peers.iter() {
+                match peer.health().await {
+                    Ok(_) => {
+                        any_ok = true;
+                        peer.ensure_sync_session().await;
+                    }
+                    Err(e) => {
+                        debug!(
+                            peer = %peer.cfg.name,
+                            error = %e,
+                            "maintain: health failed; will retry"
+                        );
+                    }
+                }
+            }
+            if any_ok || self.peers.is_empty() {
+                backoff = BASE;
+            } else {
+                backoff = (backoff * 2).min(MAX);
+            }
+            tokio::time::sleep(backoff).await;
         }
     }
 
@@ -452,7 +511,11 @@ impl PeerPool {
         }
     }
 
-    /// Prefer unary URL; else SyncSession. Never both for one fetch.
+    /// Fetch via one logical peer, spreading load across available transports.
+    ///
+    /// When both an outbound unary path and SyncSession(s) exist (mutual
+    /// dial), rotate which transport is tried first. If only one direction
+    /// is up, the remaining path serves both ways via SyncSession.
     async fn fetch_from_logical_peer(
         &self,
         peer_id: &str,
@@ -460,8 +523,7 @@ impl PeerPool {
         thread: u8,
         parts: FinalSlotParts,
     ) -> Result<Option<FinalSlotResponse>> {
-        let routes = self.registry.get(peer_id);
-        // 1) Configured static handle whose learned/config id matches.
+        // Refresh matching static handles (opens SyncSession if needed).
         for peer in self.peers.iter() {
             let id = peer
                 .learned_peer_id()
@@ -479,37 +541,81 @@ impl PeerPool {
                             expected = %self.expected_network,
                             "dropping peer: network mismatch"
                         );
-                        continue;
                     }
                     Ok(_) => {}
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        debug!(peer = %peer.cfg.name, err = %e, "static peer health failed");
+                    }
                 }
+            } else {
+                let _ = peer.health().await;
             }
-            return peer
-                .get_final_slot(period, thread, parts)
-                .await
-                .map(Some);
         }
 
-        // 2) Unary via advertise_url / registered URL.
-        if let Some(routes) = &routes {
-            for url in &routes.urls {
-                match self.unary_via_url(peer_id, url, period, thread, parts).await {
-                    Ok(r) => return Ok(Some(r)),
-                    Err(e) => {
-                        debug!(peer = %peer_id, url = %url, err = %e, "url fetch failed");
+        let mut routes: Vec<PeerRoute> = Vec::new();
+        let mut seen_urls: HashSet<String> = HashSet::new();
+        // Configured outbound URLs first (known-good dial targets).
+        for peer in self.peers.iter() {
+            let id = peer
+                .learned_peer_id()
+                .await
+                .unwrap_or_else(|| peer.cfg.name.clone());
+            if id == peer_id || peer.cfg.name == peer_id {
+                if seen_urls.insert(peer.cfg.url.clone()) {
+                    routes.push(PeerRoute::UnaryUrl(peer.cfg.url.clone()));
+                }
+            }
+        }
+        if let Some(reg) = self.registry.get(peer_id) {
+            for url in reg.urls {
+                if seen_urls.insert(url.clone()) {
+                    routes.push(PeerRoute::UnaryUrl(url));
+                }
+            }
+            for session in reg.sessions {
+                routes.push(PeerRoute::Session(session));
+            }
+        }
+        if routes.is_empty() {
+            return Ok(None);
+        }
+
+        // Rotate start index so dual links share load; single link always used.
+        let start = (self.route_rr.fetch_add(1, Ordering::Relaxed) as usize) % routes.len();
+        let mut last_err: Option<Error> = None;
+        for i in 0..routes.len() {
+            let route = &routes[(start + i) % routes.len()];
+            match route {
+                PeerRoute::UnaryUrl(url) => {
+                    match self.unary_via_url(peer_id, url, period, thread, parts).await {
+                        Ok(r) if r.final_known => return Ok(Some(r)),
+                        Ok(_) => {
+                            debug!(peer = %peer_id, url = %url, "url has no FINAL");
+                        }
+                        Err(e) => {
+                            debug!(peer = %peer_id, url = %url, err = %e, "url fetch failed");
+                            last_err = Some(e);
+                        }
+                    }
+                }
+                PeerRoute::Session(session) => {
+                    match session.get_final_slot(period, thread, parts).await {
+                        Ok(r) if r.final_known => return Ok(Some(r)),
+                        Ok(_) => {
+                            debug!(peer = %peer_id, "session has no FINAL");
+                        }
+                        Err(e) => {
+                            debug!(peer = %peer_id, err = %e, "session fetch failed");
+                            last_err = Some(e);
+                        }
                     }
                 }
             }
-            // 3) SyncSession reverse (same TCP as their outbound to us).
-            if let Some(session) = &routes.session {
-                return session
-                    .get_final_slot(period, thread, parts)
-                    .await
-                    .map(Some);
-            }
         }
-        Ok(None)
+        match last_err {
+            Some(e) => Err(e),
+            None => Ok(None),
+        }
     }
 
     async fn unary_via_url(

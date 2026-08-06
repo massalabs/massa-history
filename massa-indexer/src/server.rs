@@ -213,6 +213,11 @@ pub async fn run(config: Config) -> Result<()> {
             peer_registry.clone(),
             config.general.network.clone(),
         );
+        // Forever re-dial configured peers + reopen SyncSession after drops.
+        let maintain_pool = pool.clone();
+        tokio::spawn(async move {
+            maintain_pool.maintain_sessions().await;
+        });
         let backfill_cfg = BackfillConfig {
             rate_limit: Duration::from_millis(config.peer.scan_interval_ms.max(1)),
             wrap_pause: Duration::from_secs(30),
