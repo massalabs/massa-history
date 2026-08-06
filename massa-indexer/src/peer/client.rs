@@ -668,17 +668,26 @@ impl PeerPool {
                             debug!(peer = %peer_id, url = %url, "url has no FINAL");
                         }
                         Err(e) => {
-                            // Advertised URLs can be temporarily unreachable
-                            // (e.g. peer port not forwarded). Drop them so the
-                            // live SyncSession keeps mutual sync without 5s
-                            // connect timeouts on every slot.
-                            warn!(
-                                peer = %peer_id,
-                                url = %url,
-                                err = %e,
-                                "dropping unreachable peer URL; session routes kept"
-                            );
-                            self.registry.remove_url(peer_id, url);
+                            // Demote advertised (non-static) URLs only. Static
+                            // config peers are retried forever by maintain;
+                            // a brief restart must not suppress them for 30m.
+                            let is_static = self.peers.iter().any(|p| p.cfg.url == *url);
+                            if !is_static {
+                                warn!(
+                                    peer = %peer_id,
+                                    url = %url,
+                                    err = %e,
+                                    "dropping unreachable advertise URL; session routes kept"
+                                );
+                                self.registry.remove_url(peer_id, url);
+                            } else {
+                                debug!(
+                                    peer = %peer_id,
+                                    url = %url,
+                                    err = %e,
+                                    "static peer URL fetch failed; will retry"
+                                );
+                            }
                             last_err = Some(e);
                         }
                     }
