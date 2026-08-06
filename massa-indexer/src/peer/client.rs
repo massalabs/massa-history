@@ -65,6 +65,9 @@ pub struct PeerHandle {
     /// True while an outbound SyncSession task is alive. Cleared on close so
     /// the next `ensure_sync_session` / maintain loop reopens it forever.
     session_started: Arc<AtomicBool>,
+    /// Only configured static peers own an outbound SyncSession. Dynamic
+    /// advertise_url handles are unary-only (avoids duplicate sessions).
+    open_sync_session: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +89,16 @@ impl PeerHandle {
         db: Db,
         registry: PeerRegistry,
     ) -> Self {
+        Self::new_with_session(cfg, local, db, registry, true)
+    }
+
+    fn new_with_session(
+        cfg: PeerConfig,
+        local: LocalPeerIdentity,
+        db: Db,
+        registry: PeerRegistry,
+        open_sync_session: bool,
+    ) -> Self {
         // Seed registry with config URL under the friendly name; re-keyed
         // to the remote's real peer_id after the first successful health.
         registry.add_url(&cfg.name, &cfg.url);
@@ -98,6 +111,7 @@ impl PeerHandle {
             db,
             registry,
             session_started: Arc::new(AtomicBool::new(false)),
+            open_sync_session,
         }
     }
 
@@ -168,6 +182,9 @@ impl PeerHandle {
     /// Open outbound SyncSession if one is not already running.
     /// Safe to call frequently; reconnects after close/drop forever.
     pub async fn ensure_sync_session(&self) {
+        if !self.open_sync_session {
+            return;
+        }
         if self
             .session_started
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -634,7 +651,8 @@ impl PeerPool {
             if let Some(h) = g.get(url) {
                 h.clone()
             } else {
-                let h = Arc::new(PeerHandle::new(
+                // Unary-only: SyncSession is owned by the static PeerHandle.
+                let h = Arc::new(PeerHandle::new_with_session(
                     PeerConfig {
                         name: peer_id.to_string(),
                         url: url.to_string(),
@@ -642,6 +660,7 @@ impl PeerPool {
                     self.local.clone(),
                     self.db.clone(),
                     self.registry.clone(),
+                    false,
                 ));
                 g.insert(url.to_string(), h.clone());
                 h
