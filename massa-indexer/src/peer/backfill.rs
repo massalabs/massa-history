@@ -13,6 +13,22 @@
 //!     peer can supply the slot, write nothing and move on — the next
 //!     sweep retries.
 //!
+//! ### Bulk range path
+//!
+//! The walker scans windows of `range_periods` periods locally first.
+//! When a window is **densely** missing (≥ `range_sparse_threshold`
+//! slots), it pulls the whole window with one `StreamFinalSlots` range
+//! call per logical peer instead of one round-trip per slot — turning
+//! deep-history catch-up from ~10 slots/s into hundreds per second.
+//! Sparse windows and small bulk leftovers (e.g. slots only reachable
+//! through a session-only peer, which cannot carry range streams) still
+//! use the per-slot path. Each applied slot is paced by `apply_pause`
+//! so bulk catch-up never starves the live ingest channel it shares
+//! with the node stream. `StreamFinalSlots` has been part of the peer
+//! protocol from the start, so mixed-version fleets interoperate: an
+//! old server simply serves the same stream it always could, and an
+//! old client keeps fetching per-slot.
+//!
 //! ### What this replaces
 //!
 //! Three older mechanisms are folded into this one walker:
@@ -50,10 +66,16 @@ use crate::{
     peer::client::PeerPool,
     proto::indexer::v1::FinalSlotParts,
 };
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{debug, info, warn};
+
+/// Per-message timeout while consuming a `StreamFinalSlots` body. A stalled
+/// stream is dropped and whatever arrived so far stays applied (idempotent);
+/// the remaining slots are mopped up per-slot or retried next sweep.
+const STREAM_MSG_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Tunables for the unified backfill loop.
 #[derive(Debug, Clone)]
@@ -88,6 +110,28 @@ pub struct BackfillConfig {
     /// Number of threads per period. Always 32 in mainnet; configurable
     /// for tests.
     pub thread_count: u8,
+
+    /// Window size (in periods) the walker scans locally before deciding
+    /// between the bulk range path and per-slot fetches. With 32 threads,
+    /// 16 periods = 512 slots — matching the server-side
+    /// `stream_limit_cap` so one range stream can cover a full window.
+    pub range_periods: u64,
+
+    /// `limit` passed to `StreamFinalSlots`. Server caps at its own
+    /// `stream_limit_cap` (512 by default) regardless.
+    pub range_limit: u32,
+
+    /// Minimum number of missing slots in a window before the bulk range
+    /// path is used. Below this, per-slot fetches are cheaper than
+    /// streaming the entire window (a range stream ships every FINAL slot
+    /// in range, including ones we already have).
+    pub range_sparse_threshold: usize,
+
+    /// Pause between applying two slots received from a range stream.
+    /// This is the receive-side load throttle: PeerPatch events share the
+    /// ingest channel with the live node stream, so bulk catch-up must be
+    /// paced to never starve real-time processing.
+    pub apply_pause: Duration,
 }
 
 impl Default for BackfillConfig {
@@ -103,6 +147,10 @@ impl Default for BackfillConfig {
                 transfers: true,
             },
             thread_count: 32,
+            range_periods: 16,
+            range_limit: 512,
+            range_sparse_threshold: 24,
+            apply_pause: Duration::from_millis(2),
         }
     }
 }
@@ -168,37 +216,173 @@ pub async fn run_backfill(
                 return;
             }
 
-            for thread in 0..cfg.thread_count {
-                if tx.is_closed() {
-                    return;
-                }
+            let win_lo = period.saturating_sub(cfg.range_periods.saturating_sub(1));
 
-                if !visit_slot(
-                    &db,
-                    &pool,
-                    &tx,
-                    &cfg,
-                    metrics.as_ref(),
-                    period,
-                    thread,
-                )
-                .await
-                {
-                    // visit_slot returned false → channel closed
-                    return;
+            // Local scan of the window: cheap RocksDB gets, unthrottled —
+            // identical cost to the old per-slot skip path.
+            let mut needy: Vec<(u64, u8)> = Vec::new();
+            for p in (win_lo..=period).rev() {
+                for thread in 0..cfg.thread_count {
+                    match db.read_slot(p, thread) {
+                        Ok(row) => {
+                            if needs_fetch(row.as_ref(), &cfg.expected_streams, &cfg.parts)
+                                .is_some()
+                            {
+                                needy.push((p, thread));
+                            }
+                        }
+                        Err(e) => {
+                            warn!(error = %e, period = p, thread, "backfill: read_slot failed");
+                        }
+                    }
                 }
             }
 
-            if period == 0 {
+            if !needy.is_empty() {
+                if needy.len() >= cfg.range_sparse_threshold {
+                    // Dense window → one range stream per logical peer.
+                    // Slots no peer supplied stay in `needy`.
+                    if !range_fill_window(
+                        &pool,
+                        &tx,
+                        &cfg,
+                        metrics.as_ref(),
+                        win_lo,
+                        period,
+                        &mut needy,
+                    )
+                    .await
+                    {
+                        return;
+                    }
+                }
+                // Sparse window from the start, or a small bulk leftover
+                // (e.g. slots only reachable via a session-only peer):
+                // per-slot fetches. Large leftovers (no source has the
+                // range at all) are skipped — the next sweep retries.
+                if !needy.is_empty() && needy.len() < cfg.range_sparse_threshold {
+                    for (p, t) in std::mem::take(&mut needy) {
+                        if !visit_slot(&db, &pool, &tx, &cfg, metrics.as_ref(), p, t).await {
+                            // visit_slot returned false → channel closed
+                            return;
+                        }
+                    }
+                }
+            }
+
+            if win_lo == 0 {
                 break;
             }
-            period -= 1;
+            period = win_lo - 1;
         }
 
         debug!("backfill: reached (0,0), pausing before next sweep");
         sleep(cfg.wrap_pause).await;
     }
     info!("backfill worker stopping");
+}
+
+/// Bulk-fill a dense window `[win_lo, win_hi]` (all threads) via
+/// `StreamFinalSlots`, trying each logical peer at most once until every
+/// missing slot is covered. Only slots still present in `needy` are
+/// applied — responses for slots we already hold are discarded without a
+/// write. Every apply is paced by `cfg.apply_pause` so bulk catch-up
+/// cannot starve the live ingest path sharing the same channel.
+///
+/// Returns `false` only if the ingest channel closed (caller bails out).
+/// Slots remaining in `needy` afterwards were not supplied by any peer.
+async fn range_fill_window(
+    pool: &PeerPool,
+    tx: &EventTx,
+    cfg: &BackfillConfig,
+    metrics: Option<&Arc<Metrics>>,
+    win_lo: u64,
+    win_hi: u64,
+    needy: &mut Vec<(u64, u8)>,
+) -> bool {
+    // Union of operator-enabled parts — same mask `needs_fetch` requests
+    // for a fully-missing row.
+    let parts = FinalSlotParts {
+        block: cfg.expected_streams.filled_blocks && cfg.parts.block,
+        exec_output: cfg.expected_streams.slot_execution_outputs && cfg.parts.exec_output,
+        transfers: cfg.expected_streams.transfers && cfg.parts.transfers,
+    };
+    let mut remaining: HashSet<(u64, u8)> = needy.iter().copied().collect();
+
+    for peer_id in pool.logical_peer_ids().await {
+        if remaining.is_empty() {
+            break;
+        }
+        if tx.is_closed() {
+            return false;
+        }
+        if let Some(m) = metrics {
+            m.backfill_rpcs_total
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            m.backfill_range_streams_total
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        let mut stream = match pool
+            .stream_range_from_peer(
+                &peer_id,
+                (win_lo, 0),
+                (win_hi, cfg.thread_count.saturating_sub(1)),
+                parts,
+                cfg.range_limit,
+            )
+            .await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                // Session-only peers land here too (no unary route) — the
+                // per-slot mop-up covers them.
+                debug!(peer = %peer_id, win_lo, win_hi, err = %e, "range stream unavailable");
+                continue;
+            }
+        };
+        loop {
+            match tokio::time::timeout(STREAM_MSG_TIMEOUT, stream.message()).await {
+                Ok(Ok(Some(resp))) => {
+                    if !resp.final_known {
+                        continue;
+                    }
+                    let Ok(t) = u8::try_from(resp.thread) else {
+                        continue;
+                    };
+                    // Apply only what we actually miss; everything else is
+                    // discarded without touching the DB.
+                    if !remaining.remove(&(resp.period, t)) {
+                        continue;
+                    }
+                    if let Some(m) = metrics {
+                        m.backfill_slots_filled_total
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    if tx.send(Event::PeerPatch(Box::new(resp))).await.is_err() {
+                        debug!("backfill: ingest channel closed mid-range");
+                        return false;
+                    }
+                    // Receive-side throttle: protect live ingest.
+                    sleep(cfg.apply_pause).await;
+                }
+                Ok(Ok(None)) => break, // clean end of stream
+                Ok(Err(e)) => {
+                    // Partial result is fine — applied slots are durable and
+                    // idempotent; leftovers retry via mop-up / next sweep.
+                    debug!(peer = %peer_id, err = %e, "range stream error (partial ok)");
+                    break;
+                }
+                Err(_) => {
+                    debug!(peer = %peer_id, "range stream stalled; dropping");
+                    break;
+                }
+            }
+        }
+    }
+
+    needy.retain(|k| remaining.contains(k));
+    sleep(cfg.rate_limit).await;
+    true
 }
 
 /// Process one `(period, thread)`. Returns `false` only if the ingest

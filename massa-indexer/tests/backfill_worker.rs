@@ -201,6 +201,7 @@ async fn consumer_catches_up_from_source() {
             slot_execution_outputs: true,
             transfers: true,
         },
+        ..BackfillConfig::default()
     };
     let tx_bf = tx.clone();
     let db_bf = consumer_db.clone();
@@ -247,4 +248,107 @@ async fn consumer_catches_up_from_source() {
         s49.is_some(),
         "expected parent-gap stub for (49, 0) after applying (50, 0)"
     );
+}
+
+/// Dense-window bulk path: a consumer missing a long contiguous range must
+/// catch up via `StreamFinalSlots` range calls (one RPC covering the whole
+/// window) instead of one round-trip per slot. Asserts the range-stream
+/// counter fired and every seeded slot was replicated.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn consumer_bulk_catches_up_via_range_streams() {
+    let network = "integration";
+
+    // Source peer: 40 consecutive FINAL slots on thread 0.
+    let source_dir = tempfile::tempdir().unwrap();
+    let source_db = Db::open(source_dir.path(), "lz4", 4).unwrap();
+    for p in 100u64..140 {
+        seed_final_slot(&source_db, p, 0, &format!("trail{p}"));
+    }
+    let source_addr = start_peer_server(source_db.clone(), network).await;
+
+    // Consumer: empty db, head pinned at the top of the seeded range.
+    let consumer_dir = tempfile::tempdir().unwrap();
+    let consumer_db = Db::open(consumer_dir.path(), "lz4", 4).unwrap();
+    consumer_db
+        .update_last_final_slot(&Slot::new(139, 0))
+        .unwrap();
+    let consumer_sse = SseHub::new(32);
+    let (tx, rx) = mpsc::channel::<Event>(64);
+    let ingest = Ingest::new(consumer_db.clone(), consumer_sse.clone(), rx);
+    tokio::spawn(ingest.run());
+
+    let pool = PeerPool::with_db(
+        vec![PeerConfig {
+            name: "source".into(),
+            url: format!("http://{source_addr}"),
+        }],
+        network,
+        consumer_db.clone(),
+    );
+    let cfg = BackfillConfig {
+        rate_limit: Duration::from_millis(0),
+        wrap_pause: Duration::from_millis(50),
+        idle_pause: Duration::from_millis(50),
+        thread_count: 1,
+        parts: FinalSlotParts {
+            block: true,
+            exec_output: true,
+            transfers: true,
+        },
+        expected_streams: StreamsExpected {
+            filled_blocks: true,
+            slot_execution_outputs: true,
+            transfers: true,
+        },
+        // Force the bulk path: any window with ≥ 4 missing slots streams.
+        range_periods: 16,
+        range_sparse_threshold: 4,
+        apply_pause: Duration::from_millis(0),
+        ..BackfillConfig::default()
+    };
+    let metrics = std::sync::Arc::new(massa_indexer::metrics::Metrics::new());
+    let tx_bf = tx.clone();
+    let db_bf = consumer_db.clone();
+    let m_bf = metrics.clone();
+    let bf_handle = tokio::spawn(async move {
+        run_backfill(db_bf, pool, tx_bf, cfg, Some(m_bf)).await;
+    });
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let mut ok = false;
+    while std::time::Instant::now() < deadline {
+        let lo = consumer_db.read_slot(100, 0).unwrap();
+        let hi = consumer_db.read_slot(139, 0).unwrap();
+        let all_final = (100u64..140).all(|p| {
+            consumer_db
+                .read_slot(p, 0)
+                .unwrap()
+                .map(|s| s.status == SlotStatus::Final && s.completeness.block_body_stored)
+                .unwrap_or(false)
+        });
+        if lo.is_some() && hi.is_some() && all_final {
+            ok = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    drop(tx);
+    bf_handle.abort();
+    assert!(ok, "consumer failed to bulk-catch-up in time");
+
+    let range_streams = metrics
+        .backfill_range_streams_total
+        .load(std::sync::atomic::Ordering::Relaxed);
+    assert!(
+        range_streams > 0,
+        "expected bulk path to issue StreamFinalSlots range calls"
+    );
+    let filled = metrics
+        .backfill_slots_filled_total
+        .load(std::sync::atomic::Ordering::Relaxed);
+    assert!(filled >= 40, "expected ≥40 slots filled, got {filled}");
+
+    // Transfers replicated through the bulk path too.
+    let ts = consumer_db.iter_transfers_for_slot(120, 0).unwrap();
+    assert_eq!(ts.len(), 1);
 }

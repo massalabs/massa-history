@@ -594,6 +594,26 @@ dense a complete sweep collapses to a sequential `cf_slot` iteration
 (~5 µs per `get`), so the whole 145 M-slot mainnet history re-checks in
 roughly twelve minutes.
 
+**Bulk range path.** The walker scans windows of `range_periods`
+periods (default 16 → 512 slots with 32 threads) locally before
+issuing any RPC. When a window is densely missing
+(≥ `range_sparse_threshold` slots, default 24), it pulls the whole
+window with one `StreamFinalSlots` range call per logical peer instead
+of one round-trip per slot — deep-history catch-up runs at hundreds of
+slots per second instead of ~10. Only slots the local DB actually
+misses are applied; the rest of the stream is discarded without a
+write. Sparse windows, and small bulk leftovers (e.g. slots only
+reachable through a session-only peer — SyncSession cannot carry range
+streams), use the per-slot path. Every applied slot is paced by
+`apply_pause` (default 2 ms) so bulk catch-up never starves the live
+ingest channel it shares with the node stream. Windows where no peer
+has any data cost 1–2 quick empty streams and are re-probed on the
+next sweep, so cluster-wide gaps no longer slow the walker down.
+`StreamFinalSlots` has been part of the peer protocol from the start,
+so mixed-version fleets interoperate during rolling upgrades: an old
+server serves the same stream it always could, an old client keeps
+fetching per-slot.
+
 A miss (`is_miss = true`) is a perfectly valid FINAL state and is
 treated as covered on every subsequent sweep. The peer protocol
 distinguishes "no block in this slot" from "I don't know this slot"
@@ -1156,7 +1176,8 @@ Releases that bump `SCHEMA_VERSION` are called out in `CHANGELOG.md`.
   * `rest_requests_total`, `rest_errors_total` (axum middleware)
   * `sse_connections_open` (gauge), `sse_connections_total` (counter)
   * `backfill_passes_total`, `backfill_rpcs_total`,
-    `backfill_slots_filled_total` (counters)
+    `backfill_slots_filled_total`, `backfill_range_streams_total`
+    (counters)
 
 ### 16.2 Global allocator
 

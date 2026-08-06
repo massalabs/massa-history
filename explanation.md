@@ -494,6 +494,9 @@ Config (`BackfillConfig`, projected from `config.peer.*` and
   when a slot counts as "complete" from the backfill's point of view
   (a disabled stream is treated as "not expected", so its bit doesn't
   need to be set for the slot to be considered covered).
+- `range_periods` (default 16) / `range_limit` (default 512) /
+  `range_sparse_threshold` (default 24) / `apply_pause` (default 2 ms)
+  — bulk range path tunables, see below.
 
 Main loop (`run_backfill`):
 
@@ -540,6 +543,23 @@ a sequential `cf_slot` iteration with no RPCs. At ~5 µs per RocksDB
 twelve minutes — perfectly fine for a background worker on the
 production hardware. While the cluster is still converging, the
 `rate_limit` knob caps RPC pressure on peers.
+
+**Bulk range path.** The walker actually scans `range_periods`-period
+windows locally before issuing RPCs. A densely-missing window
+(≥ `range_sparse_threshold` slots) is pulled with a single
+`StreamFinalSlots` range call per logical peer instead of one
+round-trip per slot, turning deep-history catch-up from ~10 slots/s
+into hundreds per second. Only slots the local DB misses are applied;
+everything else in the stream is discarded without a write. Each
+apply sleeps `apply_pause` so bulk catch-up cannot starve the live
+ingest channel it shares with the node stream. Sparse windows and
+small bulk leftovers (e.g. slots only reachable through a
+session-only peer — SyncSession cannot carry range streams) still go
+per-slot. Windows nobody can supply cost one or two instantly-empty
+streams per sweep instead of hundreds of throttled per-slot probes.
+Rolling upgrades are safe in any order because `StreamFinalSlots` has
+been served since the first peer-protocol release; only the client
+side changed.
 
 What this design replaces (folded into this one walker):
 
@@ -665,6 +685,8 @@ Metrics (`/v1/metrics`):
 - `massa_indexer_backfill_rpcs_total` — peer RPCs issued by the scanner.
 - `massa_indexer_backfill_slots_filled_total` — FINAL responses we
   successfully applied.
+- `massa_indexer_backfill_range_streams_total` — bulk `StreamFinalSlots`
+  range calls issued (subset of `rpcs_total`).
 - `massa_indexer_ingest_{blocks,exec_outputs,transfers,peer_patches}_total`
   — one counter per event kind the ingest worker consumed.
 

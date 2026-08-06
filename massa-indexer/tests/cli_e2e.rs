@@ -160,7 +160,8 @@ async fn cli_peers_reports_ok_for_live_peer() {
             url: format!("http://{addr_b}"),
         },
     ];
-    let pool = PeerPool::with_db(cfgs.clone(), "integration", db.clone());
+    let (local_db, _local_dir) = open_tmp();
+    let pool = PeerPool::with_db(cfgs.clone(), "integration", local_db);
     let probes = cli::peers(&pool, &cfgs).await;
     assert_eq!(probes.len(), 2);
     // Order matches the configured order.
@@ -186,7 +187,8 @@ async fn cli_peers_reports_err_for_dead_peer() {
         // Port 1 should reliably refuse connections without privileges.
         url: "http://127.0.0.1:1".into(),
     }];
-    let pool = PeerPool::with_db(cfgs.clone(), "integration", db.clone());
+    let (local_db, _local_dir) = open_tmp();
+    let pool = PeerPool::with_db(cfgs.clone(), "integration", local_db);
     let probes = cli::peers(&pool, &cfgs).await;
     assert_eq!(probes.len(), 1);
     assert!(probes[0].status.is_err());
@@ -205,7 +207,7 @@ async fn cli_replay_pulls_slot_range_from_peer() {
         name: "src".into(),
         url: format!("http://{addr}"),
     }];
-    let pool = PeerPool::with_db(cfgs.clone(), "integration", db.clone());
+    let pool = PeerPool::with_db(cfgs.clone(), "integration", consumer_db.clone());
 
     let opts = cli::ReplayOpts {
         from: (200, 0),

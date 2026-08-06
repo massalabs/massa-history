@@ -40,6 +40,8 @@ pub struct Metrics {
     pub backfill_rpcs_total: AtomicU64,
     pub backfill_slots_filled_total: AtomicU64,
     pub backfill_passes_total: AtomicU64,
+    /// Bulk `StreamFinalSlots` range calls issued (subset of rpcs_total).
+    pub backfill_range_streams_total: AtomicU64,
 
     // Legacy DDB fallback counters.
     pub legacy_ddb_rpcs_total: AtomicU64,
@@ -66,6 +68,7 @@ impl Default for Metrics {
             backfill_rpcs_total: AtomicU64::new(0),
             backfill_slots_filled_total: AtomicU64::new(0),
             backfill_passes_total: AtomicU64::new(0),
+            backfill_range_streams_total: AtomicU64::new(0),
             legacy_ddb_rpcs_total: AtomicU64::new(0),
             legacy_ddb_slots_filled_total: AtomicU64::new(0),
             legacy_ddb_errors_total: AtomicU64::new(0),
@@ -147,6 +150,9 @@ impl Metrics {
         counter(&mut out, "massa_indexer_backfill_passes_total",
             "Backfill scan passes completed.",
             self.backfill_passes_total.load(Ordering::Relaxed));
+        counter(&mut out, "massa_indexer_backfill_range_streams_total",
+            "Bulk StreamFinalSlots range calls issued by the backfill worker.",
+            self.backfill_range_streams_total.load(Ordering::Relaxed));
 
         // Legacy DDB fallback.
         counter(&mut out, "massa_indexer_legacy_ddb_rpcs_total",

@@ -1166,6 +1166,19 @@ minutes on the production hardware. The sleep only fires on RPC
 paths, so the steady-state cost is dominated by `read_slot` calls
 which are ≈5 µs each.
 
+**Bulk range path.** The walker scans 16-period windows (512 slots)
+locally first. A densely-missing window (≥ 24 slots) is pulled with
+one `StreamFinalSlots` range call per logical peer — hundreds of
+slots per second instead of one slot per round-trip. Only locally
+missing slots are applied; each apply sleeps `apply_pause` (2 ms) so
+bulk catch-up cannot starve the live ingest channel. Sparse windows
+and small leftovers (e.g. slots only reachable via a session-only
+peer) still use the per-slot path; windows nobody can supply cost a
+couple of instantly-empty streams per sweep. Because
+`StreamFinalSlots` predates this client change, rolling upgrades are
+safe in any order: old servers already serve the stream, old clients
+keep fetching per-slot.
+
 **What this design replaces.** Three older mechanisms were folded
 into this single walker:
 
@@ -1234,7 +1247,12 @@ node DB is durable on its own).
   - `massa_indexer_backfill_rpcs_total`        — gap-slots targeted.
   - `massa_indexer_backfill_slots_filled_total` — RPCs that returned
     `final_known = true`. Should equal `…rpcs_total` once the chain
-    is fully synced; the lag is the not-yet-filled gap.
+    is fully synced; the lag is the not-yet-filled gap. (With the bulk
+    range path one stream RPC can fill hundreds of slots, so
+    `filled_total` may legitimately exceed `rpcs_total` during
+    catch-up.)
+  - `massa_indexer_backfill_range_streams_total` — bulk
+    `StreamFinalSlots` range calls issued by the walker.
   - `massa_indexer_ingest_peer_patches_total`  — patches applied.
 - `journalctl -u massa-indexer | grep -E "peer|backfill"` is the
   fastest way to see who connected to whom and how many slots were

@@ -15,6 +15,7 @@ use crate::{
     proto::indexer::v1::{
         peer_client::PeerClient, session_message::Body, FinalSlotParts, FinalSlotRequest,
         FinalSlotResponse, HealthRequest, HealthResponse, SessionMessage,
+        StreamFinalSlotsRequest,
     },
     schema::SCHEMA_VERSION,
     Error, Result,
@@ -364,6 +365,37 @@ impl PeerHandle {
         }
     }
 
+    /// Open a `StreamFinalSlots` server-stream for the closed slot range
+    /// `[from, to]`. The endpoint-level RPC timeout only bounds
+    /// time-to-response-headers; consuming the body is paced by the caller.
+    pub async fn stream_final_slots(
+        &self,
+        from: (u64, u8),
+        to: (u64, u8),
+        parts: FinalSlotParts,
+        limit: u32,
+    ) -> Result<tonic::Streaming<FinalSlotResponse>> {
+        let mut client = self.connect().await?;
+        let req = StreamFinalSlotsRequest {
+            from_period: from.0,
+            from_thread: u32::from(from.1),
+            to_period: to.0,
+            to_thread: u32::from(to.1),
+            parts: Some(parts),
+            limit,
+        };
+        match client.stream_final_slots(req).await {
+            Ok(r) => Ok(r.into_inner()),
+            Err(e) => {
+                self.drop_client().await;
+                Err(Error::other(format!(
+                    "peer {} stream_final_slots: {e}",
+                    self.cfg.name
+                )))
+            }
+        }
+    }
+
     pub async fn learned_peer_id(&self) -> Option<String> {
         self.remote_peer_id.lock().await.clone()
     }
@@ -500,20 +532,16 @@ impl PeerPool {
         v
     }
 
-    /// Call `GetFinalSlot` on each **logical** peer_id at most once.
-    pub async fn fetch_final_slot(
-        &self,
-        period: u64,
-        thread: u8,
-        parts: FinalSlotParts,
-    ) -> Result<Option<FinalSlotResponse>> {
+    /// Distinct logical peer ids reachable right now, shuffled for load
+    /// spreading. Refreshes health (and sessions) on configured peers as a
+    /// side effect. Prefers learned real peer_ids; config-name aliases are
+    /// migrated away on health/Hello and kept only until the first probe.
+    pub async fn logical_peer_ids(&self) -> Vec<String> {
         // Refresh health (and sessions) on configured peers first.
         for peer in self.peers.iter() {
             let _ = peer.health().await;
         }
 
-        // Prefer learned real peer_ids. Config-name aliases are migrated away
-        // on health/Hello; keep a fallback only until the first successful probe.
         let mut logical: Vec<String> = Vec::new();
         let mut known_aliases: HashSet<String> = HashSet::new();
         for p in self.peers.iter() {
@@ -541,9 +569,6 @@ impl PeerPool {
                 logical.push(id);
             }
         }
-        if logical.is_empty() {
-            return Ok(None);
-        }
 
         // Shuffle logical peer ids.
         let mut seed = now_ns() as u64;
@@ -553,6 +578,20 @@ impl PeerPool {
                 .wrapping_add(1442695040888963407);
             let j = (seed >> 33) as usize % (i + 1);
             logical.swap(i, j);
+        }
+        logical
+    }
+
+    /// Call `GetFinalSlot` on each **logical** peer_id at most once.
+    pub async fn fetch_final_slot(
+        &self,
+        period: u64,
+        thread: u8,
+        parts: FinalSlotParts,
+    ) -> Result<Option<FinalSlotResponse>> {
+        let logical = self.logical_peer_ids().await;
+        if logical.is_empty() {
+            return Ok(None);
         }
 
         let mut last_err: Option<Error> = None;
@@ -610,8 +649,12 @@ impl PeerPool {
                             peer = %peer.cfg.name,
                             got = %h.network,
                             expected = %self.expected_network,
-                            "dropping peer: network mismatch"
+                            "skipping peer: network mismatch"
                         );
+                        // Wrong-network peers are skipped, not errored:
+                        // the caller must treat this like "peer has no
+                        // data", not like a transport failure.
+                        return Ok(None);
                     }
                     Ok(_) => {}
                     Err(e) => {
@@ -716,15 +759,9 @@ impl PeerPool {
         }
     }
 
-    async fn unary_via_url(
-        &self,
-        peer_id: &str,
-        url: &str,
-        period: u64,
-        thread: u8,
-        parts: FinalSlotParts,
-    ) -> Result<FinalSlotResponse> {
-        // Reuse dynamic handle per URL.
+    /// Reuse (or create) the dynamic unary-only handle for `url` and verify
+    /// its network matches ours.
+    async fn handle_for_url(&self, peer_id: &str, url: &str) -> Result<Arc<PeerHandle>> {
         let handle = {
             let mut g = self.dynamic.lock().await;
             if let Some(h) = g.get(url) {
@@ -754,7 +791,95 @@ impl PeerPool {
                 )));
             }
         }
+        Ok(handle)
+    }
+
+    async fn unary_via_url(
+        &self,
+        peer_id: &str,
+        url: &str,
+        period: u64,
+        thread: u8,
+        parts: FinalSlotParts,
+    ) -> Result<FinalSlotResponse> {
+        let handle = self.handle_for_url(peer_id, url).await?;
         handle.get_final_slot(period, thread, parts).await
+    }
+
+    /// Open a `StreamFinalSlots` range stream to one logical peer, trying its
+    /// unary URL routes in rotated order. Session-only peers (no dialable
+    /// URL) return an error — the caller falls back to per-slot fetches.
+    ///
+    /// Used by the backfill walker's bulk path: one RPC returns up to
+    /// `limit` FINAL slots instead of one slot per round-trip.
+    pub async fn stream_range_from_peer(
+        &self,
+        peer_id: &str,
+        from: (u64, u8),
+        to: (u64, u8),
+        parts: FinalSlotParts,
+        limit: u32,
+    ) -> Result<tonic::Streaming<FinalSlotResponse>> {
+        // Collect unary URL routes: configured handles first, then registry.
+        let mut urls: Vec<String> = Vec::new();
+        for peer in self.peers.iter() {
+            let id = peer
+                .learned_peer_id()
+                .await
+                .unwrap_or_else(|| peer.cfg.name.clone());
+            if (id == peer_id || peer.cfg.name == peer_id)
+                && !urls.iter().any(|u| u == &peer.cfg.url)
+            {
+                urls.push(peer.cfg.url.clone());
+            }
+        }
+        if let Some(reg) = self.registry.get(peer_id) {
+            for url in reg.urls {
+                if !urls.iter().any(|u| u == &url) {
+                    urls.push(url);
+                }
+            }
+        }
+        if urls.is_empty() {
+            return Err(Error::other(format!(
+                "peer {peer_id}: no unary route for range stream"
+            )));
+        }
+
+        let start = (self.route_rr.fetch_add(1, Ordering::Relaxed) as usize) % urls.len();
+        let mut last_err: Option<Error> = None;
+        for i in 0..urls.len() {
+            let url = &urls[(start + i) % urls.len()];
+            let handle = match self.handle_for_url(peer_id, url).await {
+                Ok(h) => h,
+                Err(e) => {
+                    last_err = Some(e);
+                    continue;
+                }
+            };
+            match handle.stream_final_slots(from, to, parts, limit).await {
+                Ok(stream) => return Ok(stream),
+                Err(e) => {
+                    // Same demotion policy as the unary path: advertised
+                    // (non-static) URLs that fail are suppressed for a while;
+                    // static config URLs are retried forever by maintain.
+                    let is_static = self.peers.iter().any(|p| p.cfg.url == *url);
+                    if !is_static {
+                        debug!(
+                            peer = %peer_id,
+                            url = %url,
+                            err = %e,
+                            "range stream: dropping unreachable advertise URL"
+                        );
+                        self.registry.remove_url(peer_id, url);
+                    }
+                    last_err = Some(e);
+                }
+            }
+        }
+        Err(last_err.unwrap_or_else(|| {
+            Error::other(format!("peer {peer_id}: range stream failed"))
+        }))
     }
 }
 

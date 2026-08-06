@@ -229,6 +229,9 @@ pub async fn run(config: Config) -> Result<()> {
             },
             expected_streams: config.streams.expected(),
             thread_count: 32,
+            // Bulk catch-up tunables (range streaming + receive pacing);
+            // defaults are production-safe, see BackfillConfig docs.
+            ..BackfillConfig::default()
         };
         let db_for_bf = db.clone();
         let tx_for_bf = tx.clone();
