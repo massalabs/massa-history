@@ -93,6 +93,45 @@ impl PeerRegistry {
             }
         }
     }
+
+    /// Drop a session by bridge id regardless of which peer_id key holds it.
+    pub fn clear_session_by_bridge_id(&self, bridge_id: u64) {
+        let mut g = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        let mut empty_keys = Vec::new();
+        for (k, e) in g.iter_mut() {
+            e.sessions.retain(|s| s.id() != bridge_id);
+            if e.sessions.is_empty() && e.urls.is_empty() {
+                empty_keys.push(k.clone());
+            }
+        }
+        for k in empty_keys {
+            g.remove(&k);
+        }
+    }
+
+    /// Collapse a temporary / config-name key into the remote's real `peer_id`.
+    /// Merges URLs and sessions; no-op if `from == to` or either is empty.
+    pub fn migrate_peer_id(&self, from: &str, to: &str) {
+        if from.is_empty() || to.is_empty() || from == to {
+            return;
+        }
+        let mut g = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        let Some(old) = g.remove(from) else {
+            return;
+        };
+        let e = g.entry(to.to_string()).or_default();
+        for url in old.urls {
+            if !e.urls.iter().any(|u| u == &url) {
+                e.urls.push(url);
+            }
+        }
+        for session in old.sessions {
+            let id = session.id();
+            if !e.sessions.iter().any(|s| s.id() == id) {
+                e.sessions.push(session);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -127,5 +166,24 @@ mod tests {
         let e = r.get("indexer2").unwrap();
         assert_eq!(e.sessions.len(), 1);
         assert_eq!(e.sessions[0].id(), id2);
+    }
+
+    #[tokio::test]
+    async fn migrate_merges_urls_and_sessions() {
+        let r = PeerRegistry::new();
+        let (tx, _) = mpsc::channel(1);
+        let s = SessionBridge::new("tmp", tx);
+        let sid = s.id();
+        r.add_url("indexer1", "http://a:9443");
+        r.set_session("indexer1", s);
+        r.add_url("real", "http://b:9443");
+        r.migrate_peer_id("indexer1", "real");
+        assert!(r.get("indexer1").is_none());
+        let e = r.get("real").unwrap();
+        assert_eq!(e.urls.len(), 2);
+        assert_eq!(e.sessions.len(), 1);
+        assert_eq!(e.sessions[0].id(), sid);
+        r.clear_session_by_bridge_id(sid);
+        assert!(r.get("real").unwrap().sessions.is_empty());
     }
 }

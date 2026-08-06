@@ -274,7 +274,12 @@ impl Peer for PeerService {
                                             Ok(r) => r,
                                             Err(e) => {
                                                 warn!(error = %e, "inbound sync session serve slot");
-                                                continue;
+                                                FinalSlotResponse {
+                                                    period: req.period,
+                                                    thread: req.thread,
+                                                    final_known: false,
+                                                    ..Default::default()
+                                                }
                                             }
                                         };
                                         let _ = sink_tx.send(Ok(SessionMessage {
@@ -297,7 +302,8 @@ impl Peer for PeerService {
                     }
                 }
             }
-            registry.clear_session_by_id(&peer_id, bridge_id);
+            bridge.fail_pending();
+            registry.clear_session_by_bridge_id(bridge_id);
             info!(peer = %peer_id, "inbound sync session closed");
         });
 

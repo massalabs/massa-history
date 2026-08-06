@@ -113,6 +113,20 @@ impl SessionBridge {
             debug!(peer = %self.peer_id, id, "sync session response with no waiter");
         }
     }
+
+    /// Drop all in-flight waiters (connection closed). Onesots resolve as
+    /// cancelled so backfill does not sit on the full RPC timeout.
+    pub fn fail_pending(&self) {
+        let pending: Vec<_> = self
+            .pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .drain()
+            .map(|(_, tx)| tx)
+            .collect();
+        // Dropping the sender cancels the oneshot (receiver gets Err).
+        drop(pending);
+    }
 }
 
 /// Build the hello message for the local indexer.

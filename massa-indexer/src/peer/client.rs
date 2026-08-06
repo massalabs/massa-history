@@ -55,10 +55,10 @@ pub struct LocalPeerIdentity {
 /// underlying `PeerClient<Channel>` is reused across calls.
 pub struct PeerHandle {
     pub cfg: PeerConfig,
-    client: Mutex<Option<PeerClient<Channel>>>,
+    client: Arc<Mutex<Option<PeerClient<Channel>>>>,
     last_health: Mutex<Option<HealthSnapshot>>,
     /// Remote peer_id learned from GetHealth (for dedup).
-    remote_peer_id: Mutex<Option<String>>,
+    remote_peer_id: Arc<Mutex<Option<String>>>,
     local: LocalPeerIdentity,
     db: Db,
     registry: PeerRegistry,
@@ -104,9 +104,9 @@ impl PeerHandle {
         registry.add_url(&cfg.name, &cfg.url);
         Self {
             cfg,
-            client: Mutex::new(None),
+            client: Arc::new(Mutex::new(None)),
             last_health: Mutex::new(None),
-            remote_peer_id: Mutex::new(None),
+            remote_peer_id: Arc::new(Mutex::new(None)),
             local,
             db,
             registry,
@@ -167,7 +167,16 @@ impl PeerHandle {
             }
         };
         if !resp.peer_id.is_empty() {
+            let prev = self.remote_peer_id.lock().await.clone();
             *self.remote_peer_id.lock().await = Some(resp.peer_id.clone());
+            // Collapse config-name / prior alias → real peer_id so mutual
+            // dials are one logical peer (at-most-once fetch + load share).
+            if let Some(old) = prev {
+                self.registry.migrate_peer_id(&old, &resp.peer_id);
+            }
+            if self.cfg.name != resp.peer_id {
+                self.registry.migrate_peer_id(&self.cfg.name, &resp.peer_id);
+            }
             self.registry.add_url(&resp.peer_id, &self.cfg.url);
         }
         *self.last_health.lock().await = Some(HealthSnapshot {
@@ -241,12 +250,15 @@ impl PeerHandle {
         let db = self.db.clone();
         let registry = self.registry.clone();
         let session_started = self.session_started.clone();
+        let client_slot = self.client.clone();
+        let remote_peer_id = self.remote_peer_id.clone();
+        let cfg_name = self.cfg.name.clone();
         let forward_tx = sink_tx;
         tokio::spawn(async move {
             // Merge bridge→remote messages into the tonic sink.
             let mut out_rx = out_rx;
             let mut inbound = inbound;
-            let peer_id = bridge.peer_id().to_string();
+            let mut peer_id = bridge.peer_id().to_string();
             let bridge_id = bridge.id();
             loop {
                 tokio::select! {
@@ -264,6 +276,17 @@ impl PeerHandle {
                         match maybe_in {
                             Some(Ok(msg)) => {
                                 match msg.body {
+                                    Some(Body::Hello(h)) => {
+                                        if !h.peer_id.is_empty() && h.peer_id != peer_id {
+                                            registry.migrate_peer_id(&peer_id, &h.peer_id);
+                                            registry.migrate_peer_id(&cfg_name, &h.peer_id);
+                                            if !h.advertise_url.is_empty() {
+                                                registry.add_url(&h.peer_id, &h.advertise_url);
+                                            }
+                                            *remote_peer_id.lock().await = Some(h.peer_id.clone());
+                                            peer_id = h.peer_id;
+                                        }
+                                    }
                                     Some(Body::SlotRequest(req)) => {
                                         let parts = req.parts.unwrap_or_default();
                                         let thread = match u8::try_from(req.thread) {
@@ -276,6 +299,16 @@ impl PeerHandle {
                                             Ok(r) => r,
                                             Err(e) => {
                                                 warn!(error = %e, "sync session serve slot");
+                                                // Reply so the remote does not wait out the timeout.
+                                                let _ = forward_tx.send(SessionMessage {
+                                                    id: msg.id,
+                                                    body: Some(Body::SlotResponse(FinalSlotResponse {
+                                                        period: req.period,
+                                                        thread: req.thread,
+                                                        final_known: false,
+                                                        ..Default::default()
+                                                    })),
+                                                }).await;
                                                 continue;
                                             }
                                         };
@@ -299,7 +332,9 @@ impl PeerHandle {
                     }
                 }
             }
-            registry.clear_session_by_id(&peer_id, bridge_id);
+            bridge.fail_pending();
+            registry.clear_session_by_bridge_id(bridge_id);
+            client_slot.lock().await.take();
             session_started.store(false, Ordering::SeqCst);
             info!(peer = %peer_id, "outbound sync session closed");
         });
@@ -477,18 +512,35 @@ impl PeerPool {
             let _ = peer.health().await;
         }
 
-        let mut logical: Vec<String> = self.registry.peer_ids();
-        // Also include static peers that haven't registered yet (by config name).
+        // Prefer learned real peer_ids. Config-name aliases are migrated away
+        // on health/Hello; keep a fallback only until the first successful probe.
+        let mut logical: Vec<String> = Vec::new();
+        let mut known_aliases: HashSet<String> = HashSet::new();
         for p in self.peers.iter() {
-            let id = p
-                .learned_peer_id()
-                .await
-                .unwrap_or_else(|| p.cfg.name.clone());
-            if !logical.iter().any(|x| x == &id) {
+            if let Some(learned) = p.learned_peer_id().await {
+                known_aliases.insert(p.cfg.name.clone());
+                if learned != self.local.peer_id
+                    && !learned.is_empty()
+                    && !logical.iter().any(|x| x == &learned)
+                {
+                    logical.push(learned);
+                }
+            } else if p.cfg.name != self.local.peer_id
+                && !p.cfg.name.is_empty()
+                && !logical.iter().any(|x| x == &p.cfg.name)
+            {
+                logical.push(p.cfg.name.clone());
+            }
+        }
+        for id in self.registry.peer_ids() {
+            // Skip leftover config-name keys once the real id is known.
+            if known_aliases.contains(&id) {
+                continue;
+            }
+            if id != self.local.peer_id && !id.is_empty() && !logical.iter().any(|x| x == &id) {
                 logical.push(id);
             }
         }
-        logical.retain(|id| id != &self.local.peer_id && !id.is_empty());
         if logical.is_empty() {
             return Ok(None);
         }
