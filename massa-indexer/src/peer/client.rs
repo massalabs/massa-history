@@ -122,7 +122,9 @@ impl PeerHandle {
     }
 
     async fn drop_client(&self) {
-        self.session_started.store(false, Ordering::SeqCst);
+        // Do not clear `session_started` here — the SyncSession task owns that
+        // flag and resets it on exit. Clearing it early races with maintain /
+        // backfill and opens duplicate sessions on the same peer.
         self.client.lock().await.take();
     }
 
