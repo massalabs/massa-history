@@ -652,8 +652,11 @@ impl PeerPool {
         }
 
         // Rotate start index so dual links share load; single link always used.
+        // A successful "no FINAL" from any route means the peer was reached —
+        // do not surface a later/earlier transport error as the fetch result.
         let start = (self.route_rr.fetch_add(1, Ordering::Relaxed) as usize) % routes.len();
         let mut last_err: Option<Error> = None;
+        let mut reached = false;
         for i in 0..routes.len() {
             let route = &routes[(start + i) % routes.len()];
             match route {
@@ -661,10 +664,21 @@ impl PeerPool {
                     match self.unary_via_url(peer_id, url, period, thread, parts).await {
                         Ok(r) if r.final_known => return Ok(Some(r)),
                         Ok(_) => {
+                            reached = true;
                             debug!(peer = %peer_id, url = %url, "url has no FINAL");
                         }
                         Err(e) => {
-                            debug!(peer = %peer_id, url = %url, err = %e, "url fetch failed");
+                            // Advertised URLs can be temporarily unreachable
+                            // (e.g. peer port not forwarded). Drop them so the
+                            // live SyncSession keeps mutual sync without 5s
+                            // connect timeouts on every slot.
+                            warn!(
+                                peer = %peer_id,
+                                url = %url,
+                                err = %e,
+                                "dropping unreachable peer URL; session routes kept"
+                            );
+                            self.registry.remove_url(peer_id, url);
                             last_err = Some(e);
                         }
                     }
@@ -673,6 +687,7 @@ impl PeerPool {
                     match session.get_final_slot(period, thread, parts).await {
                         Ok(r) if r.final_known => return Ok(Some(r)),
                         Ok(_) => {
+                            reached = true;
                             debug!(peer = %peer_id, "session has no FINAL");
                         }
                         Err(e) => {
@@ -682,6 +697,9 @@ impl PeerPool {
                     }
                 }
             }
+        }
+        if reached {
+            return Ok(None);
         }
         match last_err {
             Some(e) => Err(e),

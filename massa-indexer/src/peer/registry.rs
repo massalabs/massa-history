@@ -11,7 +11,11 @@ use crate::peer::session::SessionBridge;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
+    time::{Duration, Instant},
 };
+
+/// How long a unary URL stays suppressed after a transport failure.
+const URL_DEMOTE_TTL: Duration = Duration::from_secs(30 * 60);
 
 /// How we can reach a remote peer for `GetFinalSlot`.
 #[derive(Clone, Default)]
@@ -26,6 +30,8 @@ pub struct PeerRoutes {
 #[derive(Clone, Default)]
 pub struct PeerRegistry {
     inner: Arc<RwLock<HashMap<String, PeerRoutes>>>,
+    /// URLs that recently failed connect — ignore re-advertise until expiry.
+    demoted_urls: Arc<RwLock<HashMap<String, Instant>>>,
 }
 
 impl PeerRegistry {
@@ -62,10 +68,44 @@ impl PeerRegistry {
         if peer_id.is_empty() || url.is_empty() {
             return;
         }
+        if self.is_demoted(&url) {
+            return;
+        }
         let mut g = self.inner.write().unwrap_or_else(|e| e.into_inner());
         let e = g.entry(peer_id).or_default();
         if !e.urls.iter().any(|u| u == &url) {
             e.urls.push(url);
+        }
+    }
+
+    fn is_demoted(&self, url: &str) -> bool {
+        let mut d = self
+            .demoted_urls
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
+        d.retain(|_, until| *until > Instant::now());
+        d.contains_key(url)
+    }
+
+    /// Drop a unary URL (e.g. advertised but currently unreachable). Keeps
+    /// SyncSession routes so a unilateral dial can still sync both ways.
+    pub fn remove_url(&self, peer_id: &str, url: &str) {
+        if peer_id.is_empty() || url.is_empty() {
+            return;
+        }
+        {
+            let mut d = self
+                .demoted_urls
+                .write()
+                .unwrap_or_else(|e| e.into_inner());
+            d.insert(url.to_string(), Instant::now() + URL_DEMOTE_TTL);
+        }
+        let mut g = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(e) = g.get_mut(peer_id) {
+            e.urls.retain(|u| u != url);
+            if e.sessions.is_empty() && e.urls.is_empty() {
+                g.remove(peer_id);
+            }
         }
     }
 
@@ -148,6 +188,8 @@ mod tests {
         r.add_url("indexer1", "http://b:9443");
         let e = r.get("indexer1").unwrap();
         assert_eq!(e.urls.len(), 2);
+        r.remove_url("indexer1", "http://a:9443");
+        assert_eq!(r.get("indexer1").unwrap().urls, vec!["http://b:9443".to_string()]);
     }
 
     #[tokio::test]
