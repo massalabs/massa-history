@@ -495,8 +495,9 @@ Config (`BackfillConfig`, projected from `config.peer.*` and
   (a disabled stream is treated as "not expected", so its bit doesn't
   need to be set for the slot to be considered covered).
 - `range_periods` (default 16) / `range_limit` (default 512) /
-  `range_sparse_threshold` (default 24) / `apply_pause` (default 2 ms)
-  — bulk range path tunables, see below.
+  `range_sparse_threshold` (default 24) / `apply_pause` (default 2 ms) /
+  `apply_bandwidth` (default 2 MB/s, 0 = uncapped) — bulk range path
+  tunables, see below.
 
 Main loop (`run_backfill`):
 
@@ -551,8 +552,11 @@ windows locally before issuing RPCs. A densely-missing window
 round-trip per slot, turning deep-history catch-up from ~10 slots/s
 into hundreds per second. Only slots the local DB misses are applied;
 everything else in the stream is discarded without a write. Each
-apply sleeps `apply_pause` so bulk catch-up cannot starve the live
-ingest channel it shares with the node stream. Sparse windows and
+apply sleeps `max(apply_pause, encoded_size / apply_bandwidth)` so
+bulk catch-up cannot starve the live ingest channel it shares with
+the node stream, and — just as important — cannot saturate a home
+uplink: bufferbloat on a saturated path delays health RPCs and every
+other peer exchange sharing that link. Sparse windows and
 small bulk leftovers (e.g. slots only reachable through a
 session-only peer — SyncSession cannot carry range streams) still go
 per-slot. Windows nobody can supply cost one or two instantly-empty

@@ -1170,8 +1170,10 @@ which are ≈5 µs each.
 locally first. A densely-missing window (≥ 24 slots) is pulled with
 one `StreamFinalSlots` range call per logical peer — hundreds of
 slots per second instead of one slot per round-trip. Only locally
-missing slots are applied; each apply sleeps `apply_pause` (2 ms) so
-bulk catch-up cannot starve the live ingest channel. Sparse windows
+missing slots are applied; each apply sleeps
+`max(apply_pause, encoded_size / apply_bandwidth)` (2 ms floor,
+2 MB/s budget) so bulk catch-up cannot starve the live ingest
+channel nor saturate a home uplink shared with other peer traffic. Sparse windows
 and small leftovers (e.g. slots only reachable via a session-only
 peer) still use the per-slot path; windows nobody can supply cost a
 couple of instantly-empty streams per sweep. Because

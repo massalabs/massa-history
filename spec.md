@@ -605,8 +605,11 @@ misses are applied; the rest of the stream is discarded without a
 write. Sparse windows, and small bulk leftovers (e.g. slots only
 reachable through a session-only peer — SyncSession cannot carry range
 streams), use the per-slot path. Every applied slot is paced by
-`apply_pause` (default 2 ms) so bulk catch-up never starves the live
-ingest channel it shares with the node stream. Windows where no peer
+`max(apply_pause, encoded_size / apply_bandwidth)` (defaults: 2 ms
+floor, 2 MB/s budget) so bulk catch-up never starves the live ingest
+channel it shares with the node stream and never saturates a home
+uplink (bufferbloat there would delay health RPCs for every peer
+sharing the path). Windows where no peer
 has any data cost 1–2 quick empty streams and are re-probed on the
 next sweep, so cluster-wide gaps no longer slow the walker down.
 `StreamFinalSlots` has been part of the peer protocol from the start,

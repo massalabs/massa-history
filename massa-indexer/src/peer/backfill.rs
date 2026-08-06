@@ -132,6 +132,13 @@ pub struct BackfillConfig {
     /// ingest channel with the live node stream, so bulk catch-up must be
     /// paced to never starve real-time processing.
     pub apply_pause: Duration,
+
+    /// Bandwidth budget for bulk catch-up, in bytes/second (0 = uncapped).
+    /// Each applied slot extends the pause proportionally to its encoded
+    /// size so big slots don't blow the budget. Keeping this well below a
+    /// home link's capacity avoids bufferbloat that would delay health
+    /// RPCs and other peer traffic sharing the same path.
+    pub apply_bandwidth: u64,
 }
 
 impl Default for BackfillConfig {
@@ -151,6 +158,7 @@ impl Default for BackfillConfig {
             range_limit: 512,
             range_sparse_threshold: 24,
             apply_pause: Duration::from_millis(2),
+            apply_bandwidth: 2_000_000,
         }
     }
 }
@@ -358,12 +366,23 @@ async fn range_fill_window(
                         m.backfill_slots_filled_total
                             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
+                    // Receive-side throttle: protect live ingest (fixed
+                    // floor) and the network path (byte-proportional part —
+                    // saturating a home uplink causes bufferbloat that
+                    // delays health RPCs for every peer on that path).
+                    let mut pause = cfg.apply_pause;
+                    if cfg.apply_bandwidth > 0 {
+                        let bytes = prost::Message::encoded_len(&resp);
+                        let bw = Duration::from_secs_f64(
+                            bytes as f64 / cfg.apply_bandwidth as f64,
+                        );
+                        pause = pause.max(bw);
+                    }
                     if tx.send(Event::PeerPatch(Box::new(resp))).await.is_err() {
                         debug!("backfill: ingest channel closed mid-range");
                         return false;
                     }
-                    // Receive-side throttle: protect live ingest.
-                    sleep(cfg.apply_pause).await;
+                    sleep(pause).await;
                 }
                 Ok(Ok(None)) => break, // clean end of stream
                 Ok(Err(e)) => {

@@ -304,6 +304,7 @@ async fn consumer_bulk_catches_up_via_range_streams() {
         range_periods: 16,
         range_sparse_threshold: 4,
         apply_pause: Duration::from_millis(0),
+        apply_bandwidth: 0,
         ..BackfillConfig::default()
     };
     let metrics = std::sync::Arc::new(massa_indexer::metrics::Metrics::new());
