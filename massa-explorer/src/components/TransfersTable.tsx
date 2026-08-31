@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { fmtMas, shortId } from "../lib/format";
+import { fmtMas, fmtToken, shortId } from "../lib/format";
 import type { CoinOrigin, StoredTransfer, TransferValue } from "../lib/types";
 import { AddrLink, BlockLink, OpLink } from "./Bits";
 
@@ -35,6 +35,12 @@ function ValueCell({ value }: { value: TransferValue }) {
         <span className="font-mono">
           {fmtMas(value.nmas)}{" "}
           <span className="text-slate-500 text-xs">(deferred)</span>
+        </span>
+      );
+    case "token":
+      return (
+        <span className="font-mono">
+          {fmtToken(value.raw, value.decimals, value.symbol)}
         </span>
       );
     case "unknown":
@@ -167,6 +173,20 @@ function SourceCell({ t }: { t: StoredTransfer }) {
   );
 }
 
+function AssetCell({ value }: { value: TransferValue }) {
+  if (value.kind === "token") {
+    return (
+      <span className="font-mono text-xs" title={value.name || value.contract}>
+        {value.symbol || "token"}
+      </span>
+    );
+  }
+  if (value.kind === "rolls") {
+    return <span className="text-xs text-slate-500">rolls</span>;
+  }
+  return <span className="text-xs text-slate-500">MAS</span>;
+}
+
 function AddrCell({ addr }: { addr: string | null }) {
   if (!addr) return <span className="text-slate-500">—</span>;
   return <AddrLink addr={addr} />;
@@ -209,6 +229,7 @@ export function TransfersTable({
             {showBlock && <th className="py-1.5 pr-3">Block</th>}
             <th className="py-1.5 pr-3">From</th>
             <th className="py-1.5 pr-3">To</th>
+            <th className="py-1.5 pr-3">Asset</th>
             <th className="py-1.5 pr-3 text-right">Value</th>
             <th className="py-1.5 pr-3">Source</th>
           </tr>
@@ -248,6 +269,9 @@ export function TransfersTable({
                 </td>
                 <td className={`py-1.5 pr-3 ${toHit}`}>
                   <AddrCell addr={t.to} />
+                </td>
+                <td className="py-1.5 pr-3">
+                  <AssetCell value={t.value} />
                 </td>
                 <td className="py-1.5 pr-3 text-right">
                   <ValueCell value={t.value} />

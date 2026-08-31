@@ -21,7 +21,7 @@
 
 use crate::{
     config::{Config, HARD_MAX_PAGE_SIZE},
-    db::{AsyncByAddr, Db, DeferredByAddr, Page as DbPage},
+    db::{AsyncByAddr, Db, DeferredByAddr, Page as DbPage, ScanOrder, TransferScan},
     ids::{Address, BlockId, OperationId},
     keys,
     metrics::Metrics,
@@ -29,6 +29,7 @@ use crate::{
         SlotState, SlotStatus, StoredBlock, StoredDenunciationEntry, StoredEndorsement,
         StoredOperation, StoredScEvent, StoredTransfer,
     },
+    token::{self, MergeCursor, TokenInfo},
     sse::SseHub,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -115,6 +116,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/addresses/:addr/bytecode", get(addr_bytecode))
         .route("/v1/addresses/:addr/received_ops", get(received_ops_by_addr))
         .route("/v1/addresses/:addr/transfers", get(addr_transfers))
+        .route("/v1/tokens", get(list_tokens))
         .route("/v1/addresses/:addr/endorsements", get(addr_endorsements))
         .route("/v1/addresses/:addr/denunciations", get(addr_denunciations))
         .route("/v1/addresses/:addr/events", get(addr_events))
@@ -386,6 +388,13 @@ async fn slot_events(
     ))
 }
 
+async fn list_tokens(
+    State(s): State<AppState>,
+) -> ApiResult<Json<Envelope<Vec<TokenInfo>>>> {
+    let items: Vec<TokenInfo> = s.db.token_registry().iter().map(|(_, i)| i.clone()).collect();
+    Ok(Json(Envelope::new(&s.config.general.network, items)))
+}
+
 async fn slot_transfers(
     State(s): State<AppState>,
     Path((period, thread)): Path<(u64, u8)>,
@@ -423,7 +432,18 @@ async fn slot_transfers(
             .iter_transfers_by_op(&op_id, None, limit)
             .map_err(ApiErr::from)?;
         extras.extend(page.items);
+        extras.extend(token_rows_to_api(
+            &s.db,
+            s.db.iter_token_transfers_by_op(&op_id, None, limit)
+                .map_err(ApiErr::from)?
+                .items,
+        ));
     }
+    extras.extend(token_rows_to_api(
+        &s.db,
+        s.db.iter_token_transfers_for_slot(period, thread)
+            .map_err(ApiErr::from)?,
+    ));
     let body = paginate_transfers_union(in_slot, extras, limit);
     Ok(Json(Envelope::new(&s.config.general.network, body)))
 }
@@ -436,29 +456,75 @@ async fn op_transfers(
     let limit = p.limit_of(&s.config);
     let after = p.after()?;
     let op_id = OperationId::parse(&id).map_err(ApiErr::Bad)?;
-    let DbPage { items, next_cursor } = s
+    let native = s
         .db
         .iter_transfers_by_op(&op_id, after.as_deref(), limit)
         .map_err(ApiErr::from)?;
+    let tokens = token_rows_to_api(
+        &s.db,
+        s.db.iter_token_transfers_by_op(&op_id, None, limit)
+            .map_err(ApiErr::from)?
+            .items,
+    );
+    let body = paginate_transfers_union(native.items, tokens, limit);
     Ok(Json(
-        Envelope::new(&s.config.general.network, items).with_cursor(next_cursor),
+        Envelope::new(&s.config.general.network, body).with_cursor(native.next_cursor),
     ))
 }
 
 async fn addr_transfers(
     State(s): State<AppState>,
     Path(addr): Path<String>,
-    Query(p): Query<PageQ>,
+    Query(p): Query<TransferPageQ>,
 ) -> ApiResult<Json<Envelope<Vec<StoredTransfer>>>> {
     let limit = p.limit_of(&s.config);
-    let after = p.after()?;
     let a = Address::parse(&addr).map_err(ApiErr::Bad)?;
-    let DbPage { items, next_cursor } = s
+    let (min_period, max_period) = p.period_bounds(&s.db)?;
+    let order = p.scan_order();
+    let cur = match p.cursor.as_deref() {
+        Some(s) => MergeCursor::decode(&decode_cursor(s)?.unwrap_or_default()),
+        None => MergeCursor::default(),
+    };
+    let scan_n = TransferScan {
+        after: cur.native.clone(),
+        limit,
+        order,
+        min_period,
+        max_period,
+    };
+    let scan_t = TransferScan {
+        after: cur.token.clone(),
+        limit,
+        order,
+        min_period,
+        max_period,
+    };
+    let native = s
         .db
-        .iter_transfers_by_addr(&a, after.as_deref(), limit)
+        .iter_transfers_by_addr_ex(&a, &scan_n)
         .map_err(ApiErr::from)?;
+    let token_page = s
+        .db
+        .iter_token_transfers_by_addr(&a, &scan_t)
+        .map_err(ApiErr::from)?;
+    let tokens: Vec<(StoredTransfer, Vec<u8>)> = token_page
+        .items
+        .into_iter()
+        .map(|(t, k)| {
+            let info = s.db.token_registry().get_str(&t.contract);
+            (t.to_api_transfer(info), k)
+        })
+        .collect();
+    let (items, next) = merge_keyed(
+        native.items,
+        native.next_cursor,
+        tokens,
+        token_page.next_cursor,
+        limit,
+        order,
+    );
     Ok(Json(
-        Envelope::new(&s.config.general.network, items).with_cursor(next_cursor),
+        Envelope::new(&s.config.general.network, items).with_cursor(next),
     ))
 }
 
@@ -491,12 +557,24 @@ async fn block_transfers(
         .map_err(ApiErr::from)?
         .ok_or_else(|| ApiErr::NotFound("block".into()))?;
     let mut extras: Vec<StoredTransfer> = Vec::new();
+    extras.extend(token_rows_to_api(
+        &s.db,
+        s.db.iter_token_transfers_by_block(&block_id, None, limit)
+            .map_err(ApiErr::from)?
+            .items,
+    ));
     for op_id in block.operation_ids {
         let page = s
             .db
             .iter_transfers_by_op(&op_id, None, limit)
             .map_err(ApiErr::from)?;
         extras.extend(page.items);
+        extras.extend(token_rows_to_api(
+            &s.db,
+            s.db.iter_token_transfers_by_op(&op_id, None, limit)
+                .map_err(ApiErr::from)?
+                .items,
+        ));
     }
     let body = paginate_transfers_union(in_block, extras, limit);
     Ok(Json(Envelope::new(&s.config.general.network, body)))
@@ -520,6 +598,58 @@ struct PageQ {
 /// hard cap in the config file.
 fn effective_max_page_size(cfg: &Config) -> usize {
     cfg.rest.max_page_size.clamp(1, HARD_MAX_PAGE_SIZE)
+}
+
+/// Transfer-list query: the shared page knobs plus optional time bounds
+/// and sort order. Extra fields are ignored by endpoints that don't
+/// use them (serde default).
+#[derive(Deserialize)]
+struct TransferPageQ {
+    limit: Option<usize>,
+    cursor: Option<String>,
+    since: Option<String>,
+    until: Option<String>,
+    order: Option<String>,
+}
+
+impl TransferPageQ {
+    fn limit_of(&self, cfg: &Config) -> usize {
+        self.limit
+            .unwrap_or(cfg.rest.default_page_size)
+            .clamp(1, effective_max_page_size(cfg))
+    }
+
+    fn scan_order(&self) -> ScanOrder {
+        match self.order.as_deref().map(|s| s.to_ascii_lowercase()).as_deref() {
+            Some("asc") | Some("oldest") => ScanOrder::Asc,
+            _ => ScanOrder::Desc,
+        }
+    }
+
+    fn period_bounds(&self, db: &Db) -> Result<(Option<u64>, Option<u64>), ApiErr> {
+        let (gen, t0, _tc) = chain_params(db);
+        let min = match self.since.as_deref() {
+            Some(s) => Some(
+                token::period_for_timestamp(
+                    token::parse_time_bound(s).map_err(ApiErr::Bad)?,
+                    gen,
+                    t0,
+                ),
+            ),
+            None => None,
+        };
+        let max = match self.until.as_deref() {
+            Some(s) => Some(
+                token::period_for_timestamp(
+                    token::parse_time_bound(s).map_err(ApiErr::Bad)?,
+                    gen,
+                    t0,
+                ),
+            ),
+            None => None,
+        };
+        Ok((min, max))
+    }
 }
 
 impl PageQ {
@@ -570,6 +700,81 @@ fn paginate_transfers_union(
     });
     all.truncate(limit);
     all
+}
+
+fn token_rows_to_api(db: &Db, rows: Vec<crate::token::StoredTokenTransfer>) -> Vec<StoredTransfer> {
+    rows.into_iter()
+        .map(|t| {
+            let info = db.token_registry().get_str(&t.contract);
+            t.to_api_transfer(info)
+        })
+        .collect()
+}
+
+fn transfer_ord_key(t: &StoredTransfer) -> (u64, u8, u32, u8) {
+    let tag = match t.value {
+        crate::model::TransferValue::Token { .. } => 1,
+        _ => 0,
+    };
+    (t.slot.period, t.slot.thread, t.index_in_slot, tag)
+}
+
+fn merge_keyed(
+    native: Vec<(StoredTransfer, Vec<u8>)>,
+    native_more: Option<Vec<u8>>,
+    tokens: Vec<(StoredTransfer, Vec<u8>)>,
+    token_more: Option<Vec<u8>>,
+    limit: usize,
+    order: ScanOrder,
+) -> (Vec<StoredTransfer>, Option<Vec<u8>>) {
+    let mut ni = 0usize;
+    let mut ti = 0usize;
+    let mut out = Vec::with_capacity(limit);
+    let mut last_n: Option<Vec<u8>> = None;
+    let mut last_t: Option<Vec<u8>> = None;
+    while out.len() < limit && (ni < native.len() || ti < tokens.len()) {
+        let take_native = match (native.get(ni), tokens.get(ti)) {
+            (Some((n, _)), Some((t, _))) => match order {
+                ScanOrder::Desc => transfer_ord_key(n) >= transfer_ord_key(t),
+                ScanOrder::Asc => transfer_ord_key(n) <= transfer_ord_key(t),
+            },
+            (Some(_), None) => true,
+            (None, Some(_)) => false,
+            (None, None) => break,
+        };
+        if take_native {
+            let (row, key) = native[ni].clone();
+            last_n = Some(key);
+            out.push(row);
+            ni += 1;
+        } else {
+            let (row, key) = tokens[ti].clone();
+            last_t = Some(key);
+            out.push(row);
+            ti += 1;
+        }
+    }
+    let native_has_more = ni < native.len() || native_more.is_some();
+    let token_has_more = ti < tokens.len() || token_more.is_some();
+    if out.len() < limit && !native_has_more && !token_has_more {
+        return (out, None);
+    }
+    if out.len() == limit && (native_has_more || token_has_more) {
+        let cur = MergeCursor {
+            native: last_n.or(native_more),
+            token: last_t.or(token_more),
+        };
+        return (out, Some(cur.encode()));
+    }
+    // Partial page but one side still has a continuation — keep going via cursor.
+    if native_has_more || token_has_more {
+        let cur = MergeCursor {
+            native: last_n.or(native_more),
+            token: last_t.or(token_more),
+        };
+        return (out, Some(cur.encode()));
+    }
+    (out, None)
 }
 
 #[derive(Deserialize)]
@@ -1728,26 +1933,60 @@ async fn export_addr_transfers_csv(
     // so worst-case we page 50x for a 500k export).
     let batch = 10_000usize;
     let mut transfers: Vec<StoredTransfer> = Vec::new();
-    let mut cursor: Option<Vec<u8>> = None;
+    let mut merge_cur = MergeCursor::default();
     while transfers.len() < cap {
         let remaining = cap - transfers.len();
-        let DbPage { items, next_cursor } = s
+        let scan_n = TransferScan {
+            after: merge_cur.native.clone(),
+            limit: batch.min(remaining),
+            order: ScanOrder::Desc,
+            min_period: q.from_period,
+            max_period: q.to_period,
+        };
+        let scan_t = TransferScan {
+            after: merge_cur.token.clone(),
+            limit: batch.min(remaining),
+            order: ScanOrder::Desc,
+            min_period: q.from_period,
+            max_period: q.to_period,
+        };
+        let native = s
             .db
-            .iter_transfers_by_addr(&a, cursor.as_deref(), batch.min(remaining))
+            .iter_transfers_by_addr_ex(&a, &scan_n)
             .map_err(ApiErr::from)?;
-        if items.is_empty() {
+        let token_page = s
+            .db
+            .iter_token_transfers_by_addr(&a, &scan_t)
+            .map_err(ApiErr::from)?;
+        let tokens: Vec<(StoredTransfer, Vec<u8>)> = token_page
+            .items
+            .into_iter()
+            .map(|(t, k)| {
+                let info = s.db.token_registry().get_str(&t.contract);
+                (t.to_api_transfer(info), k)
+            })
+            .collect();
+        let (page, next) = merge_keyed(
+            native.items,
+            native.next_cursor,
+            tokens,
+            token_page.next_cursor,
+            remaining,
+            ScanOrder::Desc,
+        );
+        if page.is_empty() {
             break;
         }
-        transfers.extend(items);
-        match next_cursor {
-            Some(c) => cursor = Some(c),
+        transfers.extend(page);
+        match next {
+            Some(c) => merge_cur = MergeCursor::decode(&c),
             None => break,
         }
     }
     let mut wtr = csv::Writer::from_writer(Vec::new());
     wtr.write_record([
-        "period", "thread", "index", "kind", "amount_nmas_or_rolls", "origin", "from", "to",
-        "operation_id", "async_msg_id", "deferred_call_id", "block_id",
+        "period", "thread", "index", "kind", "amount_nmas_or_rolls", "asset", "contract",
+        "origin", "from", "to", "operation_id", "async_msg_id", "deferred_call_id", "block_id",
     ])
     .ok();
     for t in transfers {
@@ -1761,11 +2000,22 @@ async fn export_addr_transfers_csv(
                 continue;
             }
         }
-        let (kind, amt) = match &t.value {
-            crate::model::TransferValue::Coins { nmas } => ("coins", nmas.to_string()),
-            crate::model::TransferValue::Rolls { count } => ("rolls", count.to_string()),
-            crate::model::TransferValue::DeferredCredits { nmas } => ("deferred_credits", nmas.to_string()),
-            crate::model::TransferValue::Unknown => ("unknown", "0".into()),
+        let (kind, amt, asset, contract) = match &t.value {
+            crate::model::TransferValue::Coins { nmas } => {
+                ("coins", nmas.to_string(), "MAS".into(), String::new())
+            }
+            crate::model::TransferValue::Rolls { count } => {
+                ("rolls", count.to_string(), "ROLLS".into(), String::new())
+            }
+            crate::model::TransferValue::DeferredCredits { nmas } => {
+                ("deferred_credits", nmas.to_string(), "MAS".into(), String::new())
+            }
+            crate::model::TransferValue::Token { contract, symbol, raw, .. } => {
+                ("token", raw.clone(), symbol.clone(), contract.clone())
+            }
+            crate::model::TransferValue::Unknown => {
+                ("unknown", "0".into(), String::new(), String::new())
+            }
         };
         let origin = serde_json::to_string(&t.origin).unwrap_or_else(|_| "\"unknown\"".into());
         wtr.write_record([
@@ -1774,6 +2024,8 @@ async fn export_addr_transfers_csv(
             t.index_in_slot.to_string(),
             kind.into(),
             amt,
+            asset,
+            contract,
             origin,
             t.from.unwrap_or_default(),
             t.to.unwrap_or_default(),
@@ -2302,6 +2554,7 @@ mod tests {
             },
             peer: crate::config::Peer::default(),
             streams: crate::config::Streams::default(),
+            tokens: crate::config::Tokens::default(),
             legacy_ddb: crate::config::LegacyDdb::default(),
         };
         AppState {
@@ -2406,6 +2659,7 @@ mod tests {
             "/v1/addresses/{addr}/ops",
             "/v1/addresses/{addr}/received_ops",
             "/v1/addresses/{addr}/transfers",
+            "/v1/tokens",
             "/v1/addresses/{addr}/endorsements",
             "/v1/addresses/{addr}/denunciations",
             "/v1/addresses/{addr}/events",
@@ -2962,5 +3216,98 @@ mod tests {
                 .starts_with("period,thread,index,"),
             "csv header missing: {text:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn tokens_endpoint_lists_whitelist() {
+        use crate::config::TokenEntry;
+        use crate::token::TokenRegistry;
+        let contract = crate::ids::mk_test_sc_addr(11);
+        let mut st = mk_state();
+        st.db = st.db.with_tokens(TokenRegistry::from_entries(&[TokenEntry {
+            address: contract.to_string(),
+            symbol: "TST".into(),
+            name: "Test Token".into(),
+            decimals: 6,
+        }]));
+        let app = router(st);
+        let res = app
+            .oneshot(Request::builder().uri("/v1/tokens").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 200);
+        let body = to_bytes(res.into_body(), 1 << 20).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["data"][0]["symbol"], "TST");
+        assert_eq!(v["data"][0]["decimals"], 6);
+    }
+
+    #[tokio::test]
+    async fn addr_transfers_merges_native_and_token_rows() {
+        use crate::config::TokenEntry;
+        use crate::model::{CoinOrigin, Slot, SlotStatus, StoredScEvent, TransferValue};
+        use crate::token::TokenRegistry;
+        let contract = crate::ids::mk_test_sc_addr(21);
+        let from = crate::ids::mk_test_user_addr(22);
+        let to = crate::ids::mk_test_user_addr(23);
+        let mut st = mk_state();
+        st.db = st.db.with_tokens(TokenRegistry::from_entries(&[TokenEntry {
+            address: contract.to_string(),
+            symbol: "TST".into(),
+            name: "Test Token".into(),
+            decimals: 2,
+        }]));
+        let native = StoredTransfer {
+            slot: Slot::new(20, 1),
+            index_in_slot: 0,
+            id: "n1".into(),
+            block_id: None,
+            block_timestamp_ms: 0,
+            from: Some(from.to_string()),
+            to: Some(to.to_string()),
+            value: TransferValue::Coins { nmas: 7 },
+            origin: CoinOrigin::OpTransactionCoins,
+            operation_id: None,
+            async_msg_id: None,
+            deferred_call_id: None,
+            denunciation_index: None,
+            is_final: true,
+            first_seen_ts_ms: 0,
+        };
+        st.db.write_transfer(&native).unwrap();
+        st.db
+            .write_sc_event(&StoredScEvent {
+                slot: Slot::new(21, 2),
+                index_in_slot: 0,
+                data: format!("TRANSFER:{from}:{to}:150"),
+                emitter_addrs: vec![contract],
+                caller_addrs: vec![],
+                status: SlotStatus::Final,
+                op_id: None,
+            })
+            .unwrap();
+
+        let app = router(st);
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/addresses/{from}/transfers?limit=10"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 200);
+        let body = to_bytes(res.into_body(), 1 << 20).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let data = v["data"].as_array().unwrap();
+        assert_eq!(data.len(), 2, "{v}");
+        // newest-first: token at period 21 then native at 20
+        assert_eq!(data[0]["value"]["kind"], "token");
+        assert_eq!(data[0]["value"]["symbol"], "TST");
+        assert_eq!(data[0]["value"]["raw"], "150");
+        assert_eq!(data[0]["origin"]["kind"], "mrc20_transfer");
+        assert_eq!(data[1]["value"]["kind"], "coins");
+        assert_eq!(data[1]["value"]["nmas"], 7);
     }
 }

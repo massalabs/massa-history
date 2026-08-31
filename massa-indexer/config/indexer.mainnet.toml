@@ -20,3 +20,8 @@ sse_ring_buffer_size = 10000
 sse_heartbeat_secs = 20
 default_page_size = 50
 max_page_size = 500
+
+[tokens]
+enabled = true
+rescan_pause_ms = 5
+rescan_batch = 256

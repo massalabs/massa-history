@@ -441,6 +441,19 @@ pub enum TransferValue {
     Rolls { count: u64 },
     /// A deferred-credit release, in nanoMAS.
     DeferredCredits { nmas: u64 },
+    /// A whitelisted MRC-20 token movement. Never stored in `cf_transfer`
+    /// (that CF stays a 1:1 mirror of the node's transfer stream / peer
+    /// wire). Produced only when converting `StoredTokenTransfer` rows for
+    /// the public REST API.
+    Token {
+        contract: String,
+        symbol: String,
+        name: String,
+        decimals: u8,
+        /// Raw integer amount (u256) as a decimal string — JSON numbers
+        /// cannot carry the full range.
+        raw: String,
+    },
     /// Value proto field was present but empty.
     Unknown,
 }
@@ -483,6 +496,12 @@ pub enum CoinOrigin {
     CreateScStorage,
     DatastoreStorage,
     DeferredCredit,
+    /// Whitelisted MRC-20 transfer (REST-only; not a node CoinOrigin).
+    Mrc20Transfer,
+    /// Whitelisted MRC-20 mint / bridge-in / wrap (REST-only).
+    Mrc20Mint,
+    /// Whitelisted MRC-20 burn / bridge-out / unwrap (REST-only).
+    Mrc20Burn,
     Other { code: u32 },
 }
 

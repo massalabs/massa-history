@@ -47,6 +47,11 @@ pub struct Metrics {
     pub legacy_ddb_rpcs_total: AtomicU64,
     pub legacy_ddb_slots_filled_total: AtomicU64,
     pub legacy_ddb_errors_total: AtomicU64,
+
+    // MRC-20 derived-index counters.
+    pub token_events_parsed_total: AtomicU64,
+    pub token_events_unparsed_total: AtomicU64,
+    pub token_rescan_events_total: AtomicU64,
 }
 
 impl Default for Metrics {
@@ -72,6 +77,9 @@ impl Default for Metrics {
             legacy_ddb_rpcs_total: AtomicU64::new(0),
             legacy_ddb_slots_filled_total: AtomicU64::new(0),
             legacy_ddb_errors_total: AtomicU64::new(0),
+            token_events_parsed_total: AtomicU64::new(0),
+            token_events_unparsed_total: AtomicU64::new(0),
+            token_rescan_events_total: AtomicU64::new(0),
         }
     }
 }
@@ -164,6 +172,16 @@ impl Metrics {
         counter(&mut out, "massa_indexer_legacy_ddb_errors_total",
             "Errors raised while consulting legacy DDB.",
             self.legacy_ddb_errors_total.load(Ordering::Relaxed));
+
+        counter(&mut out, "massa_indexer_token_events_parsed_total",
+            "Whitelisted SC events decoded into MRC-20 token rows.",
+            self.token_events_parsed_total.load(Ordering::Relaxed));
+        counter(&mut out, "massa_indexer_token_events_unparsed_total",
+            "Whitelisted SC events whose payload was not a known MRC-20 string.",
+            self.token_events_unparsed_total.load(Ordering::Relaxed));
+        counter(&mut out, "massa_indexer_token_rescan_events_total",
+            "SC events walked by the startup token-whitelist rescan.",
+            self.token_rescan_events_total.load(Ordering::Relaxed));
 
         out
     }

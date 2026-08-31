@@ -108,6 +108,14 @@ export type TransferValue =
   | { kind: "coins"; nmas: number }
   | { kind: "rolls"; count: number }
   | { kind: "deferred_credits"; nmas: number }
+  | {
+      kind: "token";
+      contract: string;
+      symbol: string;
+      name: string;
+      decimals: number;
+      raw: string;
+    }
   | { kind: "unknown" };
 
 /** Strongly-typed reason the transfer happened. Mirrors `model::CoinOrigin`. */
@@ -143,7 +151,17 @@ export type CoinOrigin =
   | { kind: "create_sc_storage" }
   | { kind: "datastore_storage" }
   | { kind: "deferred_credit" }
+  | { kind: "mrc20_transfer" }
+  | { kind: "mrc20_mint" }
+  | { kind: "mrc20_burn" }
   | { kind: "other"; code: number };
+
+export interface TokenInfo {
+  address: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+}
 
 export interface StoredTransfer {
   schema_version: number;
