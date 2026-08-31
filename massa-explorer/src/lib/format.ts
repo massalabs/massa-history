@@ -71,29 +71,6 @@ export function fmtMasString(nmas: string | null | undefined): string {
   return fracPart ? `${groupedInt}.${fracPart} MAS` : `${groupedInt} MAS`;
 }
 
-/** Format a token raw-integer amount with `decimals` (same string math as
- *  `fmtMasString` so u256 values stay exact). */
-export function fmtToken(
-  raw: string | null | undefined,
-  decimals: number,
-  symbol?: string,
-): string {
-  if (raw == null) return "—";
-  const s = raw.replace(/^\+/, "");
-  if (!/^\d+$/.test(s)) return "—";
-  const d = Math.max(0, Math.floor(decimals));
-  if (d === 0) {
-    const grouped = s.replace(/^0+(?=\d)/, "").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    return symbol ? `${grouped} ${symbol}` : grouped;
-  }
-  const padded = s.padStart(d + 1, "0");
-  const intPart = padded.slice(0, -d).replace(/^0+(?=\d)/, "");
-  const fracPart = padded.slice(-d).replace(/0+$/, "");
-  const groupedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  const body = fracPart ? `${groupedInt}.${fracPart}` : groupedInt;
-  return symbol ? `${body} ${symbol}` : body;
-}
-
 /** Canonical display of a Massa slot: `(period, thread)` */
 export function fmtSlot(s: Slot | null | undefined): string {
   if (!s) return "—";

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { fmtMas, fmtToken, shortId } from "../lib/format";
+import { fmtMas, shortId } from "../lib/format";
 import type { CoinOrigin, StoredTransfer, TransferValue } from "../lib/types";
 import { AddrLink, BlockLink, OpLink } from "./Bits";
 
@@ -13,8 +13,7 @@ function formatOrigin(o: CoinOrigin): string {
     .replace("abi ", "abi-")
     .replace("async msg", "async-msg")
     .replace("callsc", "call-sc")
-    .replace("executesc", "execute-sc")
-    .replace("mrc20 ", "MRC-20 ");
+    .replace("executesc", "execute-sc");
 }
 
 /** Turn a TransferValue into a human-readable amount + unit chip.
@@ -36,12 +35,6 @@ function ValueCell({ value }: { value: TransferValue }) {
         <span className="font-mono">
           {fmtMas(value.nmas)}{" "}
           <span className="text-slate-500 text-xs">(deferred)</span>
-        </span>
-      );
-    case "token":
-      return (
-        <span className="font-mono">
-          {fmtToken(value.raw, value.decimals, value.symbol)}
         </span>
       );
     case "unknown":
@@ -174,31 +167,6 @@ function SourceCell({ t }: { t: StoredTransfer }) {
   );
 }
 
-function AssetCell({ value }: { value: TransferValue }) {
-  if (value.kind === "token") {
-    return (
-      <div className="leading-tight max-w-[16rem]">
-        <Link
-          to={`/address/${value.contract}`}
-          className="font-mono text-xs"
-          title={value.contract}
-        >
-          {value.symbol || "token"}
-        </Link>
-        {value.name ? (
-          <div className="text-[10px] text-slate-500 truncate" title={value.name}>
-            {value.name}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-  if (value.kind === "rolls") {
-    return <span className="text-xs text-slate-500">rolls</span>;
-  }
-  return <span className="text-xs text-slate-500">MAS</span>;
-}
-
 function AddrCell({ addr }: { addr: string | null }) {
   if (!addr) return <span className="text-slate-500">—</span>;
   return <AddrLink addr={addr} />;
@@ -241,7 +209,6 @@ export function TransfersTable({
             {showBlock && <th className="py-1.5 pr-3">Block</th>}
             <th className="py-1.5 pr-3">From</th>
             <th className="py-1.5 pr-3">To</th>
-            <th className="py-1.5 pr-3">Asset</th>
             <th className="py-1.5 pr-3 text-right">Value</th>
             <th className="py-1.5 pr-3">Source</th>
           </tr>
@@ -255,7 +222,7 @@ export function TransfersTable({
             return (
               <tr
                 key={`${t.slot.period}-${t.slot.thread}-${t.index_in_slot}-${t.id || i}`}
-                className="border-t border-border align-top"
+                className="border-t border-slate-200 align-top"
                 title={t.id ? `id ${t.id}` : undefined}
               >
                 {showSlot && (
@@ -281,9 +248,6 @@ export function TransfersTable({
                 </td>
                 <td className={`py-1.5 pr-3 ${toHit}`}>
                   <AddrCell addr={t.to} />
-                </td>
-                <td className="py-1.5 pr-3">
-                  <AssetCell value={t.value} />
                 </td>
                 <td className="py-1.5 pr-3 text-right">
                   <ValueCell value={t.value} />

@@ -7,7 +7,6 @@ import {
   slotTimestampMs,
   formatTs,
   formatTsUtc,
-  fmtToken,
 } from "../lib/format";
 import type { StoredOperation } from "../lib/types";
 
@@ -81,10 +80,5 @@ describe("format helpers", () => {
 
     const pending: StoredOperation = { ...base, inclusions: [] };
     expect(firstIncludedSlot(pending)).toBeNull();
-  });
-  it("formats token amounts with decimals", () => {
-    expect(fmtToken("1500000", 6, "USDC.e")).toBe("1.5 USDC.e");
-    expect(fmtToken("1000", 0, "X")).toBe("1,000 X");
-    expect(fmtToken("0", 6, "USDC.e")).toBe("0 USDC.e");
   });
 });

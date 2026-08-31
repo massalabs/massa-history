@@ -53,7 +53,6 @@ fn make_config(port: u16, db_path: &str) -> Config {
             ..PeerCfg::default()
         },
         streams: Streams::default(),
-        tokens: massa_indexer::config::Tokens::default(),
         legacy_ddb: LegacyDdb::default(),
     }
 }

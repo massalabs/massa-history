@@ -21,11 +21,6 @@ pub struct Config {
     pub peer: Peer,
     #[serde(default)]
     pub streams: Streams,
-    /// Whitelisted MRC-20 contracts. Empty + `network = "mainnet"` loads
-    /// the Station mainnet defaults. Token rows are derived locally from
-    /// SC events and never cross the peer wire.
-    #[serde(default)]
-    pub tokens: Tokens,
     /// Optional **one-shot** legacy AWS DDB importer (§9). When
     /// `enabled = true` and credentials are provided, the indexer
     /// spawns a background task at startup that walks the archived
@@ -285,49 +280,6 @@ impl Streams {
 
 fn default_true() -> bool { true }
 
-/// MRC-20 whitelist. See [`crate::token::TokenRegistry`].
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Tokens {
-    /// Master switch. Defaults to true so a mainnet host with an empty
-    /// whitelist still indexes the Station defaults. Set `false` to
-    /// disable token indexing entirely.
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    /// Explicit contracts. When empty and `general.network = "mainnet"`,
-    /// the built-in Station list is used.
-    #[serde(default)]
-    pub whitelist: Vec<TokenEntry>,
-    /// Pause between rescan pages so a first-boot historical decode
-    /// never starves live ingest. Defaults to 5 ms.
-    #[serde(default = "default_token_rescan_pause_ms")]
-    pub rescan_pause_ms: u64,
-    /// Events decoded per rescan page before yielding.
-    #[serde(default = "default_token_rescan_batch")]
-    pub rescan_batch: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenEntry {
-    pub address: String,
-    pub symbol: String,
-    pub name: String,
-    pub decimals: u8,
-}
-
-impl Default for Tokens {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            whitelist: Vec::new(),
-            rescan_pause_ms: default_token_rescan_pause_ms(),
-            rescan_batch: default_token_rescan_batch(),
-        }
-    }
-}
-
-fn default_token_rescan_pause_ms() -> u64 { 5 }
-fn default_token_rescan_batch() -> usize { 256 }
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Rest {
     #[serde(default = "default_bind")]
@@ -472,18 +424,6 @@ impl Config {
             return Err(Error::Config(format!(
                 "rest.max_page_size must be <= {HARD_MAX_PAGE_SIZE}"
             )));
-        }
-        for (i, t) in self.tokens.whitelist.iter().enumerate() {
-            if crate::ids::Address::parse(t.address.as_str()).is_err() {
-                return Err(Error::Config(format!(
-                    "tokens.whitelist[{i}].address is not a valid Massa address"
-                )));
-            }
-            if t.symbol.trim().is_empty() {
-                return Err(Error::Config(format!(
-                    "tokens.whitelist[{i}].symbol must not be empty"
-                )));
-            }
         }
         if self.legacy_ddb.enabled {
             if self.legacy_ddb.access_key_id.trim().is_empty() {

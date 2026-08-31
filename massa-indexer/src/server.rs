@@ -24,25 +24,11 @@ use tracing::{error, info, warn};
 pub const BUILD_VERSION: &str = concat!("massa-indexer ", env!("CARGO_PKG_VERSION"));
 
 pub async fn run(config: Config) -> Result<()> {
-    // Metrics first so the DB choke-point can increment token counters
-    // on the same handle that REST scrapes.
-    let metrics = Arc::new(crate::metrics::Metrics::new());
-    let tokens = crate::token::TokenRegistry::from_config(
-        &config.tokens,
-        &config.general.network,
-    );
-    info!(
-        tokens = tokens.len(),
-        enabled = config.tokens.enabled,
-        "token whitelist loaded"
-    );
     let db = Db::open(
         &config.db.path,
         &config.db.compression,
         config.db.write_buffer_size_mb,
-    )?
-    .with_tokens(tokens)
-    .with_metrics(metrics.clone());
+    )?;
 
     // Ask the node for the chain config so we can stamp meta with real
     // genesis_timestamp / t0 / thread_count (derives slot timestamps on the
@@ -114,24 +100,10 @@ pub async fn run(config: Config) -> Result<()> {
     // shared Prometheus counters — plumbed into the ingest worker, the
     // backfill scanner and the REST layer so /v1/metrics shows a live
     // picture.
+    let metrics = Arc::new(crate::metrics::Metrics::new());
+
     // ingest worker
     let ingest = Ingest::new(db.clone(), sse.clone(), rx).with_metrics(metrics.clone());
-
-    // Historical token rescan on a dedicated OS thread (not a tokio
-    // worker). Live ingest / gRPC / peer stay on the async runtime;
-    // the walker only takes short RocksDB write batches and sleeps
-    // between pages. A crash mid-walk resumes from cf_meta checkpoint.
-    {
-        let db_r = db.clone();
-        let pause = Duration::from_millis(config.tokens.rescan_pause_ms);
-        let batch = config.tokens.rescan_batch.max(1);
-        if let Err(e) = std::thread::Builder::new()
-            .name("token-rescan".into())
-            .spawn(move || db_r.run_token_rescan_blocking(pause, batch))
-        {
-            warn!(error = %e, "failed to spawn token-rescan thread");
-        }
-    }
     let ingest_tx = tx.clone();
     let ingest_handle = tokio::spawn(ingest.run());
 

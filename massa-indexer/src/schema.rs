@@ -12,12 +12,6 @@
 //! * `2` — adds `idx_async_by_last_slot` / `idx_deferred_by_last_slot` so the
 //!   peer protocol can enumerate async / deferred rows per slot for
 //!   backfill. Previously those CFs were never populated from peer patches.
-//!
-//! Token CFs (`cf_token_transfer` + indexes) are additive derived data and
-//! deliberately do **not** bump this version: a bump would refuse older
-//! binaries and split the peer mesh. Rolling forward creates the CFs via
-//! `create_missing_column_families`; rolling an older binary onto a DB that
-//! already has them requires dropping those CFs first.
 
 /// Current on-disk schema version. Stored in `cf_meta/schema_version` as
 /// decimal ASCII. Any value other than this causes `Db::open` to refuse.

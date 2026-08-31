@@ -806,9 +806,6 @@ fn transfer_value_to_pb(v: &TransferValue) -> pb::TransferValuePb {
             Value::DeferredCredits(pb::TransferDeferredCreditsPb { nmas: *nmas })
         }
         TransferValue::Unknown => Value::Unknown(pb::TransferUnknownPb {}),
-        // Token rows never persist in cf_transfer / peer wire. Mapping to
-        // Unknown keeps encode exhaustive if a REST DTO is passed by mistake.
-        TransferValue::Token { .. } => Value::Unknown(pb::TransferUnknownPb {}),
     };
     pb::TransferValuePb { value: Some(value) }
 }
@@ -857,10 +854,6 @@ fn coin_origin_to_pb(o: &CoinOrigin) -> pb::CoinOriginPb {
         CoinOrigin::CreateScStorage => K::CoinOriginCreateScStorage,
         CoinOrigin::DatastoreStorage => K::CoinOriginDatastoreStorage,
         CoinOrigin::DeferredCredit => K::CoinOriginDeferredCredit,
-        // REST-only MRC-20 origins — never written to cf_transfer.
-        CoinOrigin::Mrc20Transfer | CoinOrigin::Mrc20Mint | CoinOrigin::Mrc20Burn => {
-            K::CoinOriginUnspecified
-        }
         // Forward-compat: emitted as UNSPECIFIED + other_code.
         CoinOrigin::Other { .. } => K::CoinOriginUnspecified,
     };

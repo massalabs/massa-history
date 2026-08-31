@@ -45,7 +45,6 @@ pub fn spec(network: &str, build: &'static str) -> Value {
         { "name": "Deferred" },
         { "name": "Search" },
             { "name": "Charts" },
-            { "name": "Tokens" },
             { "name": "Export" },
             { "name": "Node" },
             { "name": "Streams" }
@@ -81,21 +80,6 @@ pub fn spec(network: &str, build: &'static str) -> Value {
                 "Thread": {
                     "name": "thread", "in": "path", "required": true,
                     "schema": { "type": "integer", "minimum": 0, "maximum": 31 }
-                },
-                "Since": {
-                    "name": "since", "in": "query", "required": false,
-                    "schema": { "type": "string" },
-                    "description": "Inclusive lower time bound (RFC-3339 or unix ms). Converted exactly to a Massa period."
-                },
-                "Until": {
-                    "name": "until", "in": "query", "required": false,
-                    "schema": { "type": "string" },
-                    "description": "Inclusive upper time bound (RFC-3339 or unix ms)."
-                },
-                "Order": {
-                    "name": "order", "in": "query", "required": false,
-                    "schema": { "type": "string", "enum": ["desc", "asc"], "default": "desc" },
-                    "description": "Sort order. Default newest-first."
                 }
             },
             "schemas": build_schemas(),
@@ -179,8 +163,7 @@ fn build_paths() -> Value {
         "/v1/addresses/{addr}/blocks":        get("Addresses", "Blocks created by address", vec![p("Address"), p("Limit"), p("Cursor")], "BlockListEnvelope"),
         "/v1/addresses/{addr}/ops":           get("Addresses", "Operations created by address", vec![p("Address"), p("Limit"), p("Cursor")], "OpListEnvelope"),
         "/v1/addresses/{addr}/received_ops":  get("Addresses", "Operations whose target is this address", vec![p("Address"), p("Limit"), p("Cursor")], "OpListEnvelope"),
-        "/v1/addresses/{addr}/transfers":     get("Addresses", "Native MAS and whitelisted MRC-20 transfers involving address", vec![p("Address"), p("Limit"), p("Cursor"), p("Since"), p("Until"), p("Order")], "TransferListEnvelope"),
-        "/v1/tokens":                         get("Tokens", "Configured MRC-20 whitelist", vec![], "TokenListEnvelope"),
+        "/v1/addresses/{addr}/transfers":     get("Addresses", "Transfers involving address", vec![p("Address"), p("Limit"), p("Cursor")], "TransferListEnvelope"),
         "/v1/addresses/{addr}/endorsements":  get("Addresses", "Endorsements by address", vec![p("Address"), p("Limit"), p("Cursor")], "EndorsementListEnvelope"),
         "/v1/addresses/{addr}/denunciations": get("Addresses", "Denunciations of address", vec![p("Address"), p("Limit"), p("Cursor")], "DenunciationListEnvelope"),
         "/v1/addresses/{addr}/events":        get("Addresses", "SC events touching address (emitter / caller)", vec![p("Address"), p("Limit"), p("Cursor")], "ScEventListEnvelope"),
@@ -284,8 +267,6 @@ fn build_schemas() -> Value {
         "DenunciationEnvelope":   envelope(json!({ "$ref": "#/components/schemas/Denunciation" })),
         "DenunciationListEnvelope":envelope(list("Denunciation")),
         "TransferListEnvelope":   envelope(list("Transfer")),
-        "Token": { "type": "object", "additionalProperties": true },
-        "TokenListEnvelope":      envelope(list("Token")),
         "ScEventListEnvelope":    envelope(list("ScEvent")),
         "AsyncEnvelope":          envelope(json!({ "$ref": "#/components/schemas/AsyncMsg" })),
         "AsyncListEnvelope":      envelope(list("AsyncMsg")),

@@ -26,7 +26,6 @@ use crate::{
         MetaRow, SlotState, StoredBlock, StoredDenunciationEntry, StoredEndorsement,
         StoredOperation, StoredScEvent, StoredTransfer,
     },
-    token::{self, StoredTokenTransfer, TokenRegistry, TokenRescanCheckpoint, TokenRescanPhase},
     Error, Result,
 };
 use rocksdb::{
@@ -99,15 +98,6 @@ pub const IDX_DEFERRED_BY_LAST_SLOT: &str = "idx_deferred_by_last_slot";
 /// Peer observability CF (spec §8.3).
 pub const CF_PEER_STATE: &str = "cf_peer_state";
 
-/// Derived MRC-20 movements (reconstructable from `cf_sc_event` + whitelist).
-/// Additive CFs: `SCHEMA_VERSION` stays 2 so older siblings can still open
-/// their own DBs and handshake with a host that has these families.
-pub const CF_TOKEN_TRANSFER: &str = "cf_token_transfer";
-pub const IDX_TOKEN_TRANSFER_BY_ADDR: &str = "idx_token_transfer_by_addr";
-pub const IDX_TOKEN_TRANSFER_BY_CONTRACT: &str = "idx_token_transfer_by_contract";
-pub const IDX_TOKEN_TRANSFER_BY_OP: &str = "idx_token_transfer_by_op";
-pub const IDX_TOKEN_TRANSFER_BY_BLOCK: &str = "idx_token_transfer_by_block";
-
 pub const ALL_CFS: &[&str] = &[
     CF_META,
     CF_BLOCK,
@@ -139,11 +129,6 @@ pub const ALL_CFS: &[&str] = &[
     IDX_DEFERRED_BY_TARGET,
     IDX_DEFERRED_BY_LAST_SLOT,
     CF_PEER_STATE,
-    CF_TOKEN_TRANSFER,
-    IDX_TOKEN_TRANSFER_BY_ADDR,
-    IDX_TOKEN_TRANSFER_BY_CONTRACT,
-    IDX_TOKEN_TRANSFER_BY_OP,
-    IDX_TOKEN_TRANSFER_BY_BLOCK,
 ];
 
 /// Subset of [`ALL_CFS`] that hold derived data — every row in one of these
@@ -174,10 +159,6 @@ pub const SECONDARY_INDEX_CFS: &[&str] = &[
     IDX_DEFERRED_BY_SENDER,
     IDX_DEFERRED_BY_TARGET,
     IDX_DEFERRED_BY_LAST_SLOT,
-    IDX_TOKEN_TRANSFER_BY_ADDR,
-    IDX_TOKEN_TRANSFER_BY_CONTRACT,
-    IDX_TOKEN_TRANSFER_BY_OP,
-    IDX_TOKEN_TRANSFER_BY_BLOCK,
 ];
 
 /// Canonical `meta` keys inside `CF_META`.
@@ -189,12 +170,6 @@ pub mod meta_keys {
     /// whenever an incompatible change lands; mismatch triggers a refusal
     /// to open (operators wipe the data dir to continue).
     pub const SCHEMA_VERSION: &str = "schema_version";
-    /// SHA-256 hex of the active token whitelist. Compared on boot to
-    /// decide which contracts need an emitter-scoped rescan.
-    pub const TOKENS_WHITELIST_HASH: &str = "tokens_whitelist_hash";
-    /// JSON [`crate::token::TokenRescanCheckpoint`] so a restart resumes
-    /// the historical walk instead of starting over.
-    pub const TOKENS_RESCAN_CHECKPOINT: &str = "tokens_rescan_checkpoint";
 }
 
 // ---------------------------------------------------------------------------
@@ -234,20 +209,6 @@ impl<T> Page<T> {
     }
 }
 
-/// Like [`Page`] but each item carries the secondary-index key that produced
-/// it. Needed to build a merged native+token cursor without re-scanning.
-#[derive(Debug, Clone, Default)]
-pub struct KeyedPage<T> {
-    pub items: Vec<(T, Vec<u8>)>,
-    pub next_cursor: Option<Vec<u8>>,
-}
-
-impl<T> KeyedPage<T> {
-    pub fn empty() -> Self {
-        Self { items: Vec::new(), next_cursor: None }
-    }
-}
-
 /// Which side of an async message an address is being listed against.
 #[derive(Debug, Clone, Copy)]
 pub enum AsyncByAddr {
@@ -262,37 +223,6 @@ pub enum DeferredByAddr {
     Target,
 }
 
-/// Scan direction for transfer / token-transfer address indexes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScanOrder {
-    /// Newest-first (default). Matches the `rslot` key order.
-    Desc,
-    /// Oldest-first.
-    Asc,
-}
-
-/// Bounded scan over a transfer secondary index.
-#[derive(Debug, Clone)]
-pub struct TransferScan {
-    pub after: Option<Vec<u8>>,
-    pub limit: usize,
-    pub order: ScanOrder,
-    pub min_period: Option<u64>,
-    pub max_period: Option<u64>,
-}
-
-impl TransferScan {
-    pub fn newest(limit: usize) -> Self {
-        Self {
-            after: None,
-            limit,
-            order: ScanOrder::Desc,
-            min_period: None,
-            max_period: None,
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Db
 // ---------------------------------------------------------------------------
@@ -301,8 +231,6 @@ impl TransferScan {
 #[derive(Clone)]
 pub struct Db {
     inner: Arc<DB>,
-    tokens: Arc<TokenRegistry>,
-    metrics: Option<Arc<crate::metrics::Metrics>>,
 }
 
 impl Db {
@@ -332,29 +260,9 @@ impl Db {
 
         let db = DB::open_cf_descriptors(&db_opts, path.as_ref(), cf_descs)?;
         let inner = Arc::new(db);
-        let this = Self {
-            inner,
-            tokens: Arc::new(TokenRegistry::default()),
-            metrics: None,
-        };
+        let this = Self { inner };
         this.ensure_schema_version()?;
         Ok(this)
-    }
-
-    /// Bind the MRC-20 whitelist used by [`Self::write_sc_event`]. Must be
-    /// called before the handle is cloned out to ingest / peer / REST.
-    pub fn with_tokens(mut self, tokens: TokenRegistry) -> Self {
-        self.tokens = Arc::new(tokens);
-        self
-    }
-
-    pub fn with_metrics(mut self, metrics: Arc<crate::metrics::Metrics>) -> Self {
-        self.metrics = Some(metrics);
-        self
-    }
-
-    pub fn token_registry(&self) -> &TokenRegistry {
-        &self.tokens
     }
 
     /// Write the current schema version on first open, and refuse to open
@@ -690,7 +598,6 @@ impl Db {
                 batch.put_cf(self.cf(IDX_OP_BY_TARGET)?, &k, []);
             }
         }
-        self.maybe_put_token_from_op(&mut batch, op)?;
         self.inner.write(batch)?;
         Ok(())
     }
@@ -759,7 +666,6 @@ impl Db {
             );
             batch.put_cf(self.cf(IDX_SC_EVENT_BY_OP)?, &ki, []);
         }
-        self.maybe_put_token_from_event(&mut batch, ev)?;
         self.inner.write(batch)?;
         Ok(())
     }
@@ -930,12 +836,6 @@ impl Db {
                     );
                     batch.delete_cf(cf_op, &ki);
                 }
-                self.delete_token_at_slot_index(
-                    &mut batch,
-                    ev.slot.period,
-                    ev.slot.thread,
-                    ev.index_in_slot,
-                )?;
             }
             batch.delete_cf(cf, &k);
             n += 1;
@@ -944,663 +844,6 @@ impl Db {
             self.inner.write(batch)?;
         }
         Ok(())
-    }
-
-    // ---- token transfers (derived from SC events) -------------------------
-
-    fn maybe_put_token_from_event(&self, batch: &mut WriteBatch, ev: &StoredScEvent) -> Result<()> {
-        if self.tokens.is_empty() {
-            return Ok(());
-        }
-        let Some(info) = self.tokens.match_emitter(ev) else {
-            return Ok(());
-        };
-        let parsed = token::parse_mrc20_event(&ev.data);
-        if parsed.is_none() {
-            if !token::is_known_non_indexable_event(&ev.data) {
-                if let Some(m) = &self.metrics {
-                    m.token_events_unparsed_total
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
-            }
-            return Ok(());
-        }
-        let (block_id, ts) = self.token_enrichment(ev);
-        let Some(row) = token::token_row_from_event(ev, info, block_id, ts, ts) else {
-            return Ok(());
-        };
-        self.put_token_transfer_into(batch, &row)?;
-        if let Some(m) = &self.metrics {
-            m.token_events_parsed_total
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        }
-        Ok(())
-    }
-
-    fn maybe_put_token_from_op(
-        &self,
-        batch: &mut WriteBatch,
-        op: &StoredOperation,
-    ) -> Result<()> {
-        if self.tokens.is_empty() {
-            return Ok(());
-        }
-        let Some(target) = op.target.as_ref() else {
-            return Ok(());
-        };
-        let Some(info) = self.tokens.get(target) else {
-            return Ok(());
-        };
-        if !token::op_is_indexable(op) {
-            // Only a definitive FINAL failure may drop a derived row.
-            // Candidate / unknown rewrites (block re-inclusion, peer
-            // first-write) must not erase a row the rescan or a prior
-            // final-ok write already stored.
-            if op.final_exec_status == Some(crate::model::ExecStatus::Failed) {
-                if let Some(inc) = op.inclusions.first() {
-                    let idx = token::token_index_from_op_id(op.id.as_str());
-                    self.delete_token_at_slot_index(
-                        batch,
-                        inc.slot.period,
-                        inc.slot.thread,
-                        idx,
-                    )?;
-                }
-            }
-            return Ok(());
-        }
-        let ts = match (op.inclusions.first(), self.read_meta().ok().flatten()) {
-            (Some(i), Some(m)) => token::slot_timestamp_ms(
-                i.slot,
-                m.genesis_timestamp_ms,
-                m.t0_ms,
-                m.thread_count,
-            ),
-            _ => 0,
-        };
-        let Some(row) = token::token_row_from_op(op, info, ts, ts) else {
-            return Ok(());
-        };
-        self.put_token_transfer_into(batch, &row)?;
-        if let Some(m) = &self.metrics {
-            m.token_events_parsed_total
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        }
-        Ok(())
-    }
-
-    fn token_enrichment(&self, ev: &StoredScEvent) -> (Option<String>, i64) {
-        let block_id = self
-            .read_slot(ev.slot.period, ev.slot.thread)
-            .ok()
-            .flatten()
-            .and_then(|s| s.final_block_id.map(|b| b.to_string()));
-        let ts = match self.read_meta().ok().flatten() {
-            Some(m) => token::slot_timestamp_ms(
-                ev.slot,
-                m.genesis_timestamp_ms,
-                m.t0_ms,
-                m.thread_count,
-            ),
-            None => 0,
-        };
-        (block_id, ts)
-    }
-
-    fn put_token_transfer_into(
-        &self,
-        batch: &mut WriteBatch,
-        t: &StoredTokenTransfer,
-    ) -> Result<()> {
-        let key = keys::transfer_key(t.slot.period, t.slot.thread, t.index_in_slot);
-        let raw = serde_json::to_vec(t).map_err(|e| Error::other(format!("token json: {e}")))?;
-        batch.put_cf(self.cf(CF_TOKEN_TRANSFER)?, key, raw);
-
-        if let Some(from) = t.from.as_deref() {
-            if let Ok(a) = Address::parse(from) {
-                let k = keys::idx_transfer_by_addr(
-                    a.as_bytes(),
-                    t.slot.period,
-                    t.slot.thread,
-                    t.index_in_slot,
-                    keys::TRANSFER_TAG_FROM,
-                );
-                batch.put_cf(self.cf(IDX_TOKEN_TRANSFER_BY_ADDR)?, &k, []);
-            }
-        }
-        if let Some(to) = t.to.as_deref() {
-            if let Ok(a) = Address::parse(to) {
-                let k = keys::idx_transfer_by_addr(
-                    a.as_bytes(),
-                    t.slot.period,
-                    t.slot.thread,
-                    t.index_in_slot,
-                    keys::TRANSFER_TAG_TO,
-                );
-                batch.put_cf(self.cf(IDX_TOKEN_TRANSFER_BY_ADDR)?, &k, []);
-            }
-        }
-        if let Ok(c) = Address::parse(t.contract.as_str()) {
-            let k = keys::idx_transfer_by_addr(
-                c.as_bytes(),
-                t.slot.period,
-                t.slot.thread,
-                t.index_in_slot,
-                0,
-            );
-            batch.put_cf(self.cf(IDX_TOKEN_TRANSFER_BY_CONTRACT)?, &k, []);
-        }
-        if let Some(op_id) = t.operation_id.as_deref() {
-            if let Ok(o) = OperationId::parse(op_id) {
-                let k = keys::idx_transfer_by_op(
-                    o.as_bytes(),
-                    t.slot.period,
-                    t.slot.thread,
-                    t.index_in_slot,
-                );
-                batch.put_cf(self.cf(IDX_TOKEN_TRANSFER_BY_OP)?, &k, []);
-            }
-        }
-        if let Some(block_id) = t.block_id.as_deref() {
-            if let Ok(b) = BlockId::parse(block_id) {
-                let k = keys::idx_transfer_by_block(
-                    b.as_bytes(),
-                    t.slot.period,
-                    t.slot.thread,
-                    t.index_in_slot,
-                );
-                batch.put_cf(self.cf(IDX_TOKEN_TRANSFER_BY_BLOCK)?, &k, []);
-            }
-        }
-        Ok(())
-    }
-
-    fn delete_token_at_slot_index(
-        &self,
-        batch: &mut WriteBatch,
-        period: u64,
-        thread: u8,
-        index: u32,
-    ) -> Result<()> {
-        let pk = keys::transfer_key(period, thread, index);
-        let cf = self.cf(CF_TOKEN_TRANSFER)?;
-        if let Some(raw) = self.inner.get_cf(cf, pk)? {
-            if let Ok(t) = serde_json::from_slice::<StoredTokenTransfer>(&raw) {
-                if let Some(from) = t.from.as_deref() {
-                    if let Ok(a) = Address::parse(from) {
-                        let k = keys::idx_transfer_by_addr(
-                            a.as_bytes(),
-                            period,
-                            thread,
-                            index,
-                            keys::TRANSFER_TAG_FROM,
-                        );
-                        batch.delete_cf(self.cf(IDX_TOKEN_TRANSFER_BY_ADDR)?, &k);
-                    }
-                }
-                if let Some(to) = t.to.as_deref() {
-                    if let Ok(a) = Address::parse(to) {
-                        let k = keys::idx_transfer_by_addr(
-                            a.as_bytes(),
-                            period,
-                            thread,
-                            index,
-                            keys::TRANSFER_TAG_TO,
-                        );
-                        batch.delete_cf(self.cf(IDX_TOKEN_TRANSFER_BY_ADDR)?, &k);
-                    }
-                }
-                if let Ok(c) = Address::parse(t.contract.as_str()) {
-                    let k = keys::idx_transfer_by_addr(c.as_bytes(), period, thread, index, 0);
-                    batch.delete_cf(self.cf(IDX_TOKEN_TRANSFER_BY_CONTRACT)?, &k);
-                }
-                if let Some(op_id) = t.operation_id.as_deref() {
-                    if let Ok(o) = OperationId::parse(op_id) {
-                        let k = keys::idx_transfer_by_op(o.as_bytes(), period, thread, index);
-                        batch.delete_cf(self.cf(IDX_TOKEN_TRANSFER_BY_OP)?, &k);
-                    }
-                }
-                if let Some(block_id) = t.block_id.as_deref() {
-                    if let Ok(b) = BlockId::parse(block_id) {
-                        let k = keys::idx_transfer_by_block(b.as_bytes(), period, thread, index);
-                        batch.delete_cf(self.cf(IDX_TOKEN_TRANSFER_BY_BLOCK)?, &k);
-                    }
-                }
-            }
-            batch.delete_cf(cf, pk);
-        }
-        Ok(())
-    }
-
-    pub fn read_token_transfer(
-        &self,
-        period: u64,
-        thread: u8,
-        index: u32,
-    ) -> Result<Option<StoredTokenTransfer>> {
-        let k = keys::transfer_key(period, thread, index);
-        match self.inner.get_cf(self.cf(CF_TOKEN_TRANSFER)?, k)? {
-            None => Ok(None),
-            Some(raw) => serde_json::from_slice(&raw)
-                .map(Some)
-                .map_err(|e| Error::other(format!("token json: {e}"))),
-        }
-    }
-
-    pub fn iter_token_transfers_for_slot(
-        &self,
-        period: u64,
-        thread: u8,
-    ) -> Result<Vec<StoredTokenTransfer>> {
-        let cf = self.cf(CF_TOKEN_TRANSFER)?;
-        let prefix = keys::slot_key(period, thread);
-        let iter = self
-            .inner
-            .iterator_cf(cf, IteratorMode::From(&prefix, Direction::Forward));
-        let mut out = Vec::new();
-        for item in iter {
-            let (k, v) = item?;
-            if !k.starts_with(&prefix) {
-                break;
-            }
-            if let Ok(t) = serde_json::from_slice::<StoredTokenTransfer>(&v) {
-                out.push(t);
-            }
-        }
-        Ok(out)
-    }
-
-    pub fn iter_token_transfers_by_addr(
-        &self,
-        addr: &Address,
-        scan: &TransferScan,
-    ) -> Result<KeyedPage<StoredTokenTransfer>> {
-        self.scan_token_addr_idx(
-            IDX_TOKEN_TRANSFER_BY_ADDR,
-            &keys::idx_transfer_by_addr_prefix(addr.as_bytes()),
-            scan,
-            true,
-        )
-    }
-
-    pub fn iter_token_transfers_by_contract(
-        &self,
-        contract: &Address,
-        scan: &TransferScan,
-    ) -> Result<KeyedPage<StoredTokenTransfer>> {
-        self.scan_token_addr_idx(
-            IDX_TOKEN_TRANSFER_BY_CONTRACT,
-            &keys::idx_transfer_by_addr_prefix(contract.as_bytes()),
-            scan,
-            false,
-        )
-    }
-
-    pub fn iter_token_transfers_by_op(
-        &self,
-        op_id: &OperationId,
-        after: Option<&[u8]>,
-        limit: usize,
-    ) -> Result<Page<StoredTokenTransfer>> {
-        self.scan_token_id_idx(
-            IDX_TOKEN_TRANSFER_BY_OP,
-            &keys::idx_transfer_by_op_prefix(op_id.as_bytes()),
-            after,
-            limit,
-        )
-    }
-
-    pub fn iter_token_transfers_by_block(
-        &self,
-        block_id: &BlockId,
-        after: Option<&[u8]>,
-        limit: usize,
-    ) -> Result<Page<StoredTokenTransfer>> {
-        self.scan_token_id_idx(
-            IDX_TOKEN_TRANSFER_BY_BLOCK,
-            &keys::idx_transfer_by_block_prefix(block_id.as_bytes()),
-            after,
-            limit,
-        )
-    }
-
-    fn scan_token_addr_idx(
-        &self,
-        idx_cf: &str,
-        prefix: &[u8],
-        scan: &TransferScan,
-        dedup_self: bool,
-    ) -> Result<KeyedPage<StoredTokenTransfer>> {
-        if scan.limit == 0 {
-            return Ok(KeyedPage::empty());
-        }
-        let cf_idx = self.cf(idx_cf)?;
-        let cf_primary = self.cf(CF_TOKEN_TRANSFER)?;
-        let (mode, start_owned) = token_scan_mode(prefix, scan);
-        let start_ref: &[u8] = start_owned.as_deref().unwrap_or(prefix);
-        let iter = self.inner.iterator_cf(cf_idx, match mode {
-            Direction::Forward => IteratorMode::From(start_ref, Direction::Forward),
-            Direction::Reverse => IteratorMode::From(start_ref, Direction::Reverse),
-        });
-        let mut items = Vec::with_capacity(scan.limit.min(64));
-        let mut last_key: Option<Vec<u8>> = None;
-        let mut next_cursor: Option<Vec<u8>> = None;
-        let mut seen = std::collections::HashSet::<(u64, u8, u32)>::new();
-        for item in iter {
-            let (k, _v) = item?;
-            if !k.starts_with(prefix) {
-                break;
-            }
-            if scan.after.as_deref().map_or(false, |a| k.as_ref() == a) {
-                continue;
-            }
-            let Some((p, t, i, _tag)) = keys::parse_idx_transfer_by_addr(&k) else {
-                continue;
-            };
-            if let Some(min) = scan.min_period {
-                if p < min {
-                    if scan.order == ScanOrder::Desc {
-                        break;
-                    }
-                    continue;
-                }
-            }
-            if let Some(max) = scan.max_period {
-                if p > max {
-                    if scan.order == ScanOrder::Asc {
-                        break;
-                    }
-                    continue;
-                }
-            }
-            if items.len() >= scan.limit {
-                next_cursor = last_key.clone();
-                break;
-            }
-            if dedup_self && !seen.insert((p, t, i)) {
-                last_key = Some(k.into_vec());
-                continue;
-            }
-            let pk = keys::transfer_key(p, t, i);
-            if let Some(raw) = self.inner.get_cf(cf_primary, pk)? {
-                if let Ok(row) = serde_json::from_slice::<StoredTokenTransfer>(&raw) {
-                    last_key = Some(k.to_vec());
-                    items.push((row, k.into_vec()));
-                }
-            }
-        }
-        Ok(KeyedPage { items, next_cursor })
-    }
-
-    fn scan_token_id_idx(
-        &self,
-        idx_cf: &str,
-        prefix: &[u8],
-        after: Option<&[u8]>,
-        limit: usize,
-    ) -> Result<Page<StoredTokenTransfer>> {
-        if limit == 0 {
-            return Ok(Page::empty());
-        }
-        let cf_idx = self.cf(idx_cf)?;
-        let cf_primary = self.cf(CF_TOKEN_TRANSFER)?;
-        let start: &[u8] = after.unwrap_or(prefix);
-        let iter = self
-            .inner
-            .iterator_cf(cf_idx, IteratorMode::From(start, Direction::Forward));
-        let mut items = Vec::with_capacity(limit.min(64));
-        let mut last_key: Option<Vec<u8>> = None;
-        let mut next_cursor: Option<Vec<u8>> = None;
-        for item in iter {
-            let (k, _v) = item?;
-            if !k.starts_with(prefix) {
-                break;
-            }
-            if after.map_or(false, |a| k.as_ref() == a) {
-                continue;
-            }
-            if items.len() >= limit {
-                next_cursor = last_key.clone();
-                break;
-            }
-            let Some((p, t, i)) = keys::parse_idx_id_slot_index(&k) else {
-                continue;
-            };
-            let pk = keys::transfer_key(p, t, i);
-            if let Some(raw) = self.inner.get_cf(cf_primary, pk)? {
-                if let Ok(row) = serde_json::from_slice::<StoredTokenTransfer>(&raw) {
-                    items.push(row);
-                    last_key = Some(k.into_vec());
-                }
-            }
-        }
-        Ok(Page { items, next_cursor })
-    }
-
-    pub fn read_tokens_whitelist_hash(&self) -> Result<Option<String>> {
-        let cf = self.cf(CF_META)?;
-        Ok(self
-            .inner
-            .get_cf(cf, meta_keys::TOKENS_WHITELIST_HASH.as_bytes())?
-            .and_then(|v| String::from_utf8(v).ok()))
-    }
-
-    pub fn write_tokens_whitelist_hash(&self, hash: &str) -> Result<()> {
-        self.inner.put_cf(
-            self.cf(CF_META)?,
-            meta_keys::TOKENS_WHITELIST_HASH.as_bytes(),
-            hash.as_bytes(),
-        )?;
-        Ok(())
-    }
-
-    pub fn read_tokens_rescan_checkpoint(&self) -> Result<Option<TokenRescanCheckpoint>> {
-        let cf = self.cf(CF_META)?;
-        match self
-            .inner
-            .get_cf(cf, meta_keys::TOKENS_RESCAN_CHECKPOINT.as_bytes())?
-        {
-            None => Ok(None),
-            Some(raw) => Ok(serde_json::from_slice(&raw).ok()),
-        }
-    }
-
-    pub fn write_tokens_rescan_checkpoint(&self, ck: &TokenRescanCheckpoint) -> Result<()> {
-        let raw =
-            serde_json::to_vec(ck).map_err(|e| Error::other(format!("rescan checkpoint: {e}")))?;
-        self.inner.put_cf(
-            self.cf(CF_META)?,
-            meta_keys::TOKENS_RESCAN_CHECKPOINT.as_bytes(),
-            raw,
-        )?;
-        Ok(())
-    }
-
-    /// One paced page of the historical token walk. Returns `true` when
-    /// the fingerprint is fully caught up (or the whitelist is empty).
-    /// Safe to call from a dedicated OS thread: one WriteBatch per page,
-    /// no long-lived lock beyond the RocksDB write itself.
-    pub fn token_rescan_step(&self, batch: usize) -> Result<bool> {
-        let wanted = self.tokens.fingerprint();
-        if self.tokens.is_empty() {
-            let ck = TokenRescanCheckpoint::done(&wanted);
-            self.write_tokens_rescan_checkpoint(&ck)?;
-            self.write_tokens_whitelist_hash(&wanted)?;
-            return Ok(true);
-        }
-        let addrs: Vec<_> = self.tokens.addresses().cloned().collect();
-        let stored_hash = self.read_tokens_whitelist_hash()?;
-        let mut ck = match self.read_tokens_rescan_checkpoint()? {
-            Some(c) if c.fingerprint == wanted => c,
-            _ => {
-                // An older binary only stored the hash. Matching hash
-                // means that walk already finished — do not redo it.
-                if stored_hash.as_deref() == Some(wanted.as_str()) {
-                    let ck = TokenRescanCheckpoint::done(&wanted);
-                    self.write_tokens_rescan_checkpoint(&ck)?;
-                    return Ok(true);
-                }
-                TokenRescanCheckpoint::fresh(&wanted)
-            }
-        };
-        if ck.done {
-            if stored_hash.as_deref() != Some(wanted.as_str()) {
-                self.write_tokens_whitelist_hash(&wanted)?;
-            }
-            return Ok(true);
-        }
-        if ck.contract_idx >= addrs.len() {
-            ck.advance(None, addrs.len());
-            self.write_tokens_rescan_checkpoint(&ck)?;
-            return Ok(ck.done);
-        }
-        let addr = &addrs[ck.contract_idx];
-        let after = ck.cursor_bytes();
-        let (seen, _parsed, next) = match ck.phase {
-            TokenRescanPhase::Ops => {
-                self.rescan_token_ops_page(addr, after.as_deref(), batch.max(1))?
-            }
-            TokenRescanPhase::Events => {
-                self.rescan_token_page(addr, after.as_deref(), batch.max(1))?
-            }
-        };
-        let _ = seen;
-        ck.advance(next, addrs.len());
-        self.write_tokens_rescan_checkpoint(&ck)?;
-        if ck.done {
-            self.write_tokens_whitelist_hash(&wanted)?;
-        }
-        Ok(ck.done)
-    }
-
-    /// `true` when this fingerprint already finished (including a hash
-    /// written by an older binary that had no checkpoint).
-    pub fn token_rescan_already_done(&self) -> bool {
-        let wanted = self.tokens.fingerprint();
-        if let Ok(Some(c)) = self.read_tokens_rescan_checkpoint() {
-            if c.fingerprint == wanted {
-                return c.done;
-            }
-            return false;
-        }
-        matches!(self.read_tokens_whitelist_hash(), Ok(Some(h)) if h == wanted)
-    }
-
-    /// Blocking historical walk. Must run on a dedicated OS thread so
-    /// RocksDB page scans never pin a tokio worker used by ingest / gRPC.
-    pub fn run_token_rescan_blocking(&self, pause: std::time::Duration, batch: usize) {
-        let wanted = self.tokens.fingerprint();
-        if self.token_rescan_already_done() {
-            if let Err(e) = self.token_rescan_step(batch) {
-                tracing::warn!(error = %e, "failed to persist completed token rescan mark");
-            }
-            tracing::info!("token whitelist unchanged; skip historical rescan");
-            return;
-        }
-        let resume = matches!(
-            self.read_tokens_rescan_checkpoint(),
-            Ok(Some(c)) if c.fingerprint == wanted && !c.done
-        );
-        tracing::info!(
-            fingerprint = %wanted,
-            batch,
-            resume,
-            "token whitelist rescan on dedicated thread"
-        );
-        loop {
-            match self.token_rescan_step(batch) {
-                Ok(true) => {
-                    tracing::info!("token whitelist rescan complete");
-                    return;
-                }
-                Ok(false) => {}
-                Err(e) => {
-                    tracing::warn!(error = %e, "token rescan page failed; will retry");
-                    std::thread::sleep(pause.max(std::time::Duration::from_millis(50)));
-                    continue;
-                }
-            }
-            if !pause.is_zero() {
-                std::thread::sleep(pause);
-            }
-        }
-    }
-
-    /// Decode up to `limit` events emitted by `addr` into token rows.
-    /// Used by the startup rescan so a whitelist edit (or first boot)
-    /// reconstructs history from events already on disk.
-    pub fn rescan_token_page(
-        &self,
-        addr: &Address,
-        after: Option<&[u8]>,
-        limit: usize,
-    ) -> Result<(u64, u64, Option<Vec<u8>>)> {
-        let page = self.iter_sc_events_by_emitter(addr, after, limit)?;
-        let mut parsed = 0u64;
-        let mut seen = 0u64;
-        let mut batch = WriteBatch::default();
-        for ev in &page.items {
-            seen += 1;
-            if ev.status != crate::model::SlotStatus::Final {
-                continue;
-            }
-            let before = self
-                .read_token_transfer(ev.slot.period, ev.slot.thread, ev.index_in_slot)?
-                .is_some();
-            self.maybe_put_token_from_event(&mut batch, ev)?;
-            if !before && token::parse_mrc20_event(&ev.data).is_some() {
-                parsed += 1;
-            }
-        }
-        if !page.items.is_empty() {
-            self.inner.write(batch)?;
-        }
-        if let Some(m) = &self.metrics {
-            m.token_rescan_events_total
-                .fetch_add(seen, std::sync::atomic::Ordering::Relaxed);
-        }
-        Ok((seen, parsed, page.next_cursor))
-    }
-
-    /// Decode up to `limit` CallSC ops targeting `addr` into token rows.
-    /// Complements [`Self::rescan_token_page`]: official MRC-20 contracts
-    /// only emit `"TRANSFER SUCCESS"`, so history lives on the ops.
-    pub fn rescan_token_ops_page(
-        &self,
-        addr: &Address,
-        after: Option<&[u8]>,
-        limit: usize,
-    ) -> Result<(u64, u64, Option<Vec<u8>>)> {
-        let page = self.iter_ops_by_target(addr, after, limit)?;
-        let mut parsed = 0u64;
-        let mut seen = 0u64;
-        let mut batch = WriteBatch::default();
-        for id in &page.items {
-            seen += 1;
-            let Some(op) = self.read_op(id)? else {
-                continue;
-            };
-            let idx = token::token_index_from_op_id(op.id.as_str());
-            let slot = op.inclusions.first().map(|i| i.slot);
-            let before = match slot {
-                Some(s) => self
-                    .read_token_transfer(s.period, s.thread, idx)?
-                    .is_some(),
-                None => false,
-            };
-            self.maybe_put_token_from_op(&mut batch, &op)?;
-            if !before && token::op_is_indexable(&op) {
-                parsed += 1;
-            }
-        }
-        if !page.items.is_empty() {
-            self.inner.write(batch)?;
-        }
-        if let Some(m) = &self.metrics {
-            m.token_rescan_events_total
-                .fetch_add(seen, std::sync::atomic::Ordering::Relaxed);
-        }
-        Ok((seen, parsed, page.next_cursor))
     }
 
     // ---- denunciations -----------------------------------------------------
@@ -1950,40 +1193,17 @@ impl Db {
         after: Option<&[u8]>,
         limit: usize,
     ) -> Result<Page<StoredTransfer>> {
-        let keyed = self.iter_transfers_by_addr_ex(
-            addr,
-            &TransferScan {
-                after: after.map(|a| a.to_vec()),
-                limit,
-                order: ScanOrder::Desc,
-                min_period: None,
-                max_period: None,
-            },
-        )?;
-        Ok(Page {
-            items: keyed.items.into_iter().map(|(t, _)| t).collect(),
-            next_cursor: keyed.next_cursor,
-        })
-    }
-
-    /// Bounded / directional variant of [`Self::iter_transfers_by_addr`].
-    pub fn iter_transfers_by_addr_ex(
-        &self,
-        addr: &Address,
-        scan: &TransferScan,
-    ) -> Result<KeyedPage<StoredTransfer>> {
-        if scan.limit == 0 {
-            return Ok(KeyedPage::empty());
+        if limit == 0 {
+            return Ok(Page::empty());
         }
         let cf_idx = self.cf(IDX_TRANSFER_BY_ADDR)?;
         let cf_primary = self.cf(CF_TRANSFER)?;
         let prefix = keys::idx_transfer_by_addr_prefix(addr.as_bytes());
-        let (dir, start_owned) = token_scan_mode(&prefix, scan);
-        let start_ref: &[u8] = start_owned.as_deref().unwrap_or(&prefix);
+        let start: &[u8] = after.unwrap_or(&prefix);
         let iter = self
             .inner
-            .iterator_cf(cf_idx, IteratorMode::From(start_ref, dir));
-        let mut items = Vec::with_capacity(scan.limit.min(64));
+            .iterator_cf(cf_idx, IteratorMode::From(start, Direction::Forward));
+        let mut items = Vec::with_capacity(limit.min(64));
         let mut last_key: Option<Vec<u8>> = None;
         let mut next_cursor: Option<Vec<u8>> = None;
         let mut seen_keys = std::collections::HashSet::<(u64, u8, u32)>::new();
@@ -1992,45 +1212,32 @@ impl Db {
             if !k.starts_with(&prefix) {
                 break;
             }
-            if scan.after.as_deref().map_or(false, |a| k.as_ref() == a) {
+            if after.map_or(false, |a| k.as_ref() == a) {
                 continue;
+            }
+            if items.len() >= limit {
+                next_cursor = last_key.clone();
+                break;
             }
             let Some((p, t, i, _tag)) = keys::parse_idx_transfer_by_addr(&k) else {
                 continue;
             };
-            if let Some(min) = scan.min_period {
-                if p < min {
-                    if scan.order == ScanOrder::Desc {
-                        break;
-                    }
-                    continue;
-                }
-            }
-            if let Some(max) = scan.max_period {
-                if p > max {
-                    if scan.order == ScanOrder::Asc {
-                        break;
-                    }
-                    continue;
-                }
-            }
-            if items.len() >= scan.limit {
-                next_cursor = last_key.clone();
-                break;
-            }
             if !seen_keys.insert((p, t, i)) {
+                // A self-transfer has two index rows (from/to). Keep scanning
+                // but record the index-CF key as the cursor boundary so we
+                // don't revisit the skipped row on resume.
                 last_key = Some(k.into_vec());
                 continue;
             }
             let pk = keys::transfer_key(p, t, i);
             if let Some(raw) = self.inner.get_cf(cf_primary, pk)? {
                 if let Ok(tr) = codec::decode_transfer(&raw) {
-                    last_key = Some(k.to_vec());
-                    items.push((tr, k.into_vec()));
+                    items.push(tr);
+                    last_key = Some(k.into_vec());
                 }
             }
         }
-        Ok(KeyedPage { items, next_cursor })
+        Ok(Page { items, next_cursor })
     }
 
     /// Look up every transfer executed inside a block. Ordered newest-first
@@ -2723,10 +1930,6 @@ impl Db {
             let removed = self.raw_clear(cf)?;
             report.cleared.push((cf.to_string(), removed));
         }
-        // Token primaries are derived from SC events; drop them so the
-        // event replay below rebuilds an exact set.
-        let token_cleared = self.raw_clear(CF_TOKEN_TRANSFER)?;
-        report.cleared.push((CF_TOKEN_TRANSFER.to_string(), token_cleared));
 
         // 2) Replay primaries through the writer methods. Each `write_*`
         // method is idempotent and re-emits the matching index rows.
@@ -2862,58 +2065,6 @@ impl Db {
             })
             .collect()
     }
-}
-
-/// Choose a RocksDB start key + direction for an address-keyed `rslot` index.
-///
-/// Desc (newest first): forward from `addr ‖ rslot(max_period, 31)` (or the
-/// prefix). Asc (oldest first): reverse from the prefix successor, which
-/// lands on the oldest key under `addr`.
-fn token_scan_mode(prefix: &[u8], scan: &TransferScan) -> (Direction, Option<Vec<u8>>) {
-    if let Some(after) = scan.after.as_deref() {
-        let dir = match scan.order {
-            ScanOrder::Desc => Direction::Forward,
-            ScanOrder::Asc => Direction::Reverse,
-        };
-        return (dir, Some(after.to_vec()));
-    }
-    match scan.order {
-        ScanOrder::Desc => {
-            if let Some(max_p) = scan.max_period {
-                let mut start = prefix.to_vec();
-                start.extend_from_slice(&keys::rslot_key(max_p, 31));
-                (Direction::Forward, Some(start))
-            } else {
-                (Direction::Forward, Some(prefix.to_vec()))
-            }
-        }
-        ScanOrder::Asc => {
-            if let Some(min_p) = scan.min_period {
-                // rslot(min_p, 0) is the oldest slot of min_p. Reverse from
-                // just after that key walks toward newer slots.
-                let mut start = prefix.to_vec();
-                start.extend_from_slice(&keys::rslot_key(min_p, 0));
-                start.extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0xff]);
-                (Direction::Reverse, Some(start))
-            } else if let Some(succ) = prefix_successor(prefix) {
-                (Direction::Reverse, Some(succ))
-            } else {
-                (Direction::Reverse, Some(prefix.to_vec()))
-            }
-        }
-    }
-}
-
-fn prefix_successor(prefix: &[u8]) -> Option<Vec<u8>> {
-    let mut p = prefix.to_vec();
-    for i in (0..p.len()).rev() {
-        if p[i] < 0xff {
-            p[i] += 1;
-            return Some(p);
-        }
-        p[i] = 0;
-    }
-    None
 }
 
 // ---------------------------------------------------------------------------
@@ -3239,370 +2390,5 @@ mod tests {
         // If nothing is expected, every slot is trivially complete.
         let nothing = StreamsExpected::default();
         assert_eq!(db.count_incomplete_slots(&nothing).unwrap(), 0);
-    }
-
-    #[test]
-    fn write_sc_event_derives_token_row_for_whitelist_hit() {
-        use crate::config::TokenEntry;
-        use crate::ids::mk_test_sc_addr;
-        use crate::token::TokenRegistry;
-        let contract = mk_test_sc_addr(7);
-        let from = mk_test_user_addr(1);
-        let to = mk_test_user_addr(2);
-        let tokens = TokenRegistry::from_entries(&[TokenEntry {
-            address: contract.to_string(),
-            symbol: "TST".into(),
-            name: "Test Token".into(),
-            decimals: 6,
-        }]);
-        let dir = tempfile::tempdir().unwrap();
-        let db = Db::open(dir.path(), "lz4", 4)
-            .unwrap()
-            .with_tokens(tokens);
-        let ev = StoredScEvent {
-            slot: Slot::new(50, 3),
-            index_in_slot: 2,
-            data: format!("TRANSFER:{from}:{to}:1000"),
-            emitter_addrs: vec![contract.clone()],
-            caller_addrs: vec![],
-            status: SlotStatus::Final,
-            op_id: Some(mk_test_op_id(9)),
-        };
-        db.write_sc_event(&ev).unwrap();
-        let row = db.read_token_transfer(50, 3, 2).unwrap().unwrap();
-        assert_eq!(row.raw_amount, "1000");
-        assert_eq!(row.from.as_deref(), Some(from.to_string().as_str()));
-        assert_eq!(row.to.as_deref(), Some(to.to_string().as_str()));
-
-        let page = db
-            .iter_token_transfers_by_addr(&from, &TransferScan::newest(10))
-            .unwrap();
-        assert_eq!(page.items.len(), 1);
-
-        // Candidate rewrite: clear + rewrite drops the token row then
-        // recreates it from the new FINAL event set.
-        db.clear_sc_events_for_slot(50, 3).unwrap();
-        assert!(db.read_token_transfer(50, 3, 2).unwrap().is_none());
-        db.write_sc_event(&ev).unwrap();
-        assert!(db.read_token_transfer(50, 3, 2).unwrap().is_some());
-    }
-
-    #[test]
-    fn write_sc_event_skips_unknown_payload_and_non_whitelisted() {
-        use crate::ids::mk_test_sc_addr;
-        let (db, _dir) = open_tmp(); // empty whitelist
-        let ev = StoredScEvent {
-            slot: Slot::new(1, 0),
-            index_in_slot: 0,
-            data: "TRANSFER:x:y:1".into(),
-            emitter_addrs: vec![mk_test_sc_addr(1)],
-            caller_addrs: vec![],
-            status: SlotStatus::Final,
-            op_id: None,
-        };
-        db.write_sc_event(&ev).unwrap();
-        assert!(db.read_token_transfer(1, 0, 0).unwrap().is_none());
-    }
-
-    #[test]
-    fn rescan_page_indexes_history_already_on_disk() {
-        use crate::config::TokenEntry;
-        use crate::ids::mk_test_sc_addr;
-        use crate::token::TokenRegistry;
-        let contract = mk_test_sc_addr(3);
-        let from = mk_test_user_addr(4);
-        let to = mk_test_user_addr(5);
-        let dir = tempfile::tempdir().unwrap();
-        let db = Db::open(dir.path(), "lz4", 4).unwrap();
-        let ev = StoredScEvent {
-            slot: Slot::new(9, 1),
-            index_in_slot: 0,
-            data: format!("MINT:{to}:42"),
-            emitter_addrs: vec![contract.clone()],
-            caller_addrs: vec![],
-            status: SlotStatus::Final,
-            op_id: None,
-        };
-        db.write_sc_event(&ev).unwrap();
-        assert!(db.read_token_transfer(9, 1, 0).unwrap().is_none());
-
-        let db = db.with_tokens(TokenRegistry::from_entries(&[TokenEntry {
-            address: contract.to_string(),
-            symbol: "X".into(),
-            name: "X".into(),
-            decimals: 0,
-        }]));
-        let (seen, parsed, next) = db.rescan_token_page(&contract, None, 10).unwrap();
-        assert_eq!(seen, 1);
-        assert_eq!(parsed, 1);
-        assert!(next.is_none());
-        let row = db.read_token_transfer(9, 1, 0).unwrap().unwrap();
-        assert_eq!(row.raw_amount, "42");
-        assert!(row.from.is_none());
-        assert_eq!(row.to.as_deref(), Some(to.to_string().as_str()));
-        let _ = from;
-    }
-
-    #[test]
-    fn write_op_derives_token_row_for_whitelist_callsc() {
-        use crate::config::TokenEntry;
-        use crate::ids::mk_test_sc_addr;
-        use crate::model::{OperationDetails, OperationInclusion, OperationKind, ExecStatus};
-        use crate::token::{token_index_from_op_id, TokenRegistry};
-        let contract = mk_test_sc_addr(11);
-        let from = mk_test_user_addr(8);
-        let to = mk_test_user_addr(9);
-        let tokens = TokenRegistry::from_entries(&[TokenEntry {
-            address: contract.to_string(),
-            symbol: "TST".into(),
-            name: "Test Token".into(),
-            decimals: 6,
-        }]);
-        let dir = tempfile::tempdir().unwrap();
-        let db = Db::open(dir.path(), "lz4", 4)
-            .unwrap()
-            .with_tokens(tokens);
-        let mut buf = Vec::new();
-        let tb = to.as_str().as_bytes();
-        buf.extend_from_slice(&(tb.len() as u32).to_le_bytes());
-        buf.extend_from_slice(tb);
-        let mut amt = 55u64.to_le_bytes().to_vec();
-        amt.resize(32, 0);
-        buf.extend_from_slice(&amt);
-        let op_id = mk_test_op_id(77);
-        let op = StoredOperation {
-            id: op_id.clone(),
-            creator: from.clone(),
-            target: Some(contract.clone()),
-            kind: OperationKind::CallSc,
-            expire_period: 10,
-            fee_nmas: 0,
-            thread: 0,
-            inclusions: vec![OperationInclusion {
-                slot: Slot::new(12, 2),
-                block_id: mk_test_block_id(3),
-            }],
-            candidate_exec_status: None,
-            final_exec_status: Some(ExecStatus::Ok),
-            details: OperationDetails {
-                target_function: Some("transfer".into()),
-                parameter_hex: Some(hex::encode(&buf)),
-                ..Default::default()
-            },
-            signature: String::new(),
-            content_creator_pub_key: String::new(),
-            serialized_size: 0,
-            raw_signed_op_b64: String::new(),
-            first_seen_ts_ms: 0,
-        };
-        db.write_op(&op).unwrap();
-        let idx = token_index_from_op_id(op_id.as_str());
-        let row = db.read_token_transfer(12, 2, idx).unwrap().unwrap();
-        assert_eq!(row.raw_amount, "55");
-        assert_eq!(row.from.as_deref(), Some(from.to_string().as_str()));
-        assert_eq!(row.to.as_deref(), Some(to.to_string().as_str()));
-        let page = db
-            .iter_token_transfers_by_addr(&from, &TransferScan::newest(10))
-            .unwrap();
-        assert_eq!(page.items.len(), 1);
-
-        // A candidate rewrite must not drop a row produced by a prior
-        // final-ok write (block re-inclusion / exec-status update).
-        let mut cand = op.clone();
-        cand.final_exec_status = None;
-        cand.candidate_exec_status = Some(ExecStatus::Ok);
-        db.write_op(&cand).unwrap();
-        assert!(db.read_token_transfer(12, 2, idx).unwrap().is_some());
-
-        // Failed rewrite drops the derived row.
-        let mut failed = op.clone();
-        failed.final_exec_status = Some(ExecStatus::Failed);
-        db.write_op(&failed).unwrap();
-        assert!(db.read_token_transfer(12, 2, idx).unwrap().is_none());
-    }
-
-    #[test]
-    fn rescan_ops_page_indexes_history_already_on_disk() {
-        use crate::config::TokenEntry;
-        use crate::ids::mk_test_sc_addr;
-        use crate::model::{OperationDetails, OperationInclusion, OperationKind, ExecStatus};
-        use crate::token::{token_index_from_op_id, TokenRegistry};
-        let contract = mk_test_sc_addr(4);
-        let from = mk_test_user_addr(6);
-        let to = mk_test_user_addr(7);
-        let dir = tempfile::tempdir().unwrap();
-        let db = Db::open(dir.path(), "lz4", 4).unwrap();
-        let mut buf = Vec::new();
-        let tb = to.as_str().as_bytes();
-        buf.extend_from_slice(&(tb.len() as u32).to_le_bytes());
-        buf.extend_from_slice(tb);
-        let mut amt = 7u64.to_le_bytes().to_vec();
-        amt.resize(32, 0);
-        buf.extend_from_slice(&amt);
-        let op_id = mk_test_op_id(5);
-        let op = StoredOperation {
-            id: op_id.clone(),
-            creator: from.clone(),
-            target: Some(contract.clone()),
-            kind: OperationKind::CallSc,
-            expire_period: 10,
-            fee_nmas: 0,
-            thread: 0,
-            inclusions: vec![OperationInclusion {
-                slot: Slot::new(3, 1),
-                block_id: mk_test_block_id(8),
-            }],
-            candidate_exec_status: None,
-            final_exec_status: Some(ExecStatus::Ok),
-            details: OperationDetails {
-                target_function: Some("transfer".into()),
-                parameter_hex: Some(hex::encode(&buf)),
-                ..Default::default()
-            },
-            signature: String::new(),
-            content_creator_pub_key: String::new(),
-            serialized_size: 0,
-            raw_signed_op_b64: String::new(),
-            first_seen_ts_ms: 0,
-        };
-        db.write_op(&op).unwrap();
-        let idx = token_index_from_op_id(op_id.as_str());
-        assert!(db.read_token_transfer(3, 1, idx).unwrap().is_none());
-
-        let db = db.with_tokens(TokenRegistry::from_entries(&[TokenEntry {
-            address: contract.to_string(),
-            symbol: "X".into(),
-            name: "X".into(),
-            decimals: 0,
-        }]));
-        let (seen, parsed, next) = db.rescan_token_ops_page(&contract, None, 10).unwrap();
-        assert_eq!(seen, 1);
-        assert_eq!(parsed, 1);
-        assert!(next.is_none());
-        let row = db.read_token_transfer(3, 1, idx).unwrap().unwrap();
-        assert_eq!(row.raw_amount, "7");
-        assert_eq!(row.from.as_deref(), Some(from.to_string().as_str()));
-    }
-
-    #[test]
-    fn token_rescan_step_resumes_after_interrupt() {
-        use crate::config::TokenEntry;
-        use crate::ids::mk_test_sc_addr;
-        use crate::model::{OperationDetails, OperationInclusion, OperationKind, ExecStatus};
-        use crate::token::{token_index_from_op_id, TokenRegistry};
-        let c1 = mk_test_sc_addr(21);
-        let c2 = mk_test_sc_addr(22);
-        let from = mk_test_user_addr(10);
-        let to = mk_test_user_addr(11);
-        let mut buf = Vec::new();
-        let tb = to.as_str().as_bytes();
-        buf.extend_from_slice(&(tb.len() as u32).to_le_bytes());
-        buf.extend_from_slice(tb);
-        let mut amt = 3u64.to_le_bytes().to_vec();
-        amt.resize(32, 0);
-        buf.extend_from_slice(&amt);
-        let tokens = TokenRegistry::from_entries(&[
-            TokenEntry {
-                address: c1.to_string(),
-                symbol: "A".into(),
-                name: "A".into(),
-                decimals: 0,
-            },
-            TokenEntry {
-                address: c2.to_string(),
-                symbol: "B".into(),
-                name: "B".into(),
-                decimals: 0,
-            },
-        ]);
-        let dir = tempfile::tempdir().unwrap();
-        let db = Db::open(dir.path(), "lz4", 4).unwrap();
-        let mut ids = Vec::new();
-        for (i, target) in [c1.clone(), c1.clone(), c2.clone()].into_iter().enumerate() {
-            let op_id = mk_test_op_id(200 + i as u64);
-            ids.push((target.clone(), op_id.clone()));
-            db.write_op(&StoredOperation {
-                id: op_id,
-                creator: from.clone(),
-                target: Some(target),
-                kind: OperationKind::CallSc,
-                expire_period: 10,
-                fee_nmas: 0,
-                thread: 0,
-                inclusions: vec![OperationInclusion {
-                    slot: Slot::new(4, i as u8),
-                    block_id: mk_test_block_id(20 + i as u64),
-                }],
-                candidate_exec_status: None,
-                final_exec_status: Some(ExecStatus::Ok),
-                details: OperationDetails {
-                    target_function: Some("transfer".into()),
-                    parameter_hex: Some(hex::encode(&buf)),
-                    ..Default::default()
-                },
-                signature: String::new(),
-                content_creator_pub_key: String::new(),
-                serialized_size: 0,
-                raw_signed_op_b64: String::new(),
-                first_seen_ts_ms: 0,
-            })
-            .unwrap();
-        }
-        // Failed CallSC must not become a token row even after rescan.
-        db.write_op(&StoredOperation {
-            id: mk_test_op_id(299),
-            creator: from.clone(),
-            target: Some(c1.clone()),
-            kind: OperationKind::CallSc,
-            expire_period: 10,
-            fee_nmas: 0,
-            thread: 0,
-            inclusions: vec![OperationInclusion {
-                slot: Slot::new(4, 9),
-                block_id: mk_test_block_id(99),
-            }],
-            candidate_exec_status: Some(ExecStatus::Ok),
-            final_exec_status: Some(ExecStatus::Failed),
-            details: OperationDetails {
-                target_function: Some("transfer".into()),
-                parameter_hex: Some(hex::encode(&buf)),
-                ..Default::default()
-            },
-            signature: String::new(),
-            content_creator_pub_key: String::new(),
-            serialized_size: 0,
-            raw_signed_op_b64: String::new(),
-            first_seen_ts_ms: 0,
-        })
-        .unwrap();
-
-        let db = db.with_tokens(tokens);
-        assert!(!db.token_rescan_already_done());
-        // batch=1 forces several steps so we can interrupt mid-walk.
-        assert!(!db.token_rescan_step(1).unwrap());
-        let mid = db.read_tokens_rescan_checkpoint().unwrap().unwrap();
-        assert!(!mid.done);
-        assert_eq!(mid.fingerprint, db.token_registry().fingerprint());
-        // Resume as if the process restarted.
-        let mut steps = 0u32;
-        while !db.token_rescan_step(1).unwrap() {
-            steps += 1;
-            assert!(steps < 32, "rescan did not finish");
-        }
-        assert!(db.token_rescan_already_done());
-        let fin = db.read_tokens_rescan_checkpoint().unwrap().unwrap();
-        assert!(fin.done);
-        for (target, op_id) in &ids {
-            let idx = token_index_from_op_id(op_id.as_str());
-            // slot thread = index in the write loop
-            let thread = if target == &c2 { 2 } else if op_id == &ids[1].1 { 1 } else { 0 };
-            let row = db.read_token_transfer(4, thread, idx).unwrap();
-            assert!(row.is_some(), "missing row for {op_id}");
-        }
-        let failed_idx = token_index_from_op_id(mk_test_op_id(299).as_str());
-        assert!(db.read_token_transfer(4, 9, failed_idx).unwrap().is_none());
-        // A second boot with the same fingerprint is a no-op.
-        assert!(db.token_rescan_already_done());
-        assert!(db.token_rescan_step(1).unwrap());
     }
 }

@@ -53,15 +53,6 @@ scan_interval_ms = 50
 # TCP link. If both sides also dial each other, peer_id dedup ensures
 # each logical peer is fetched at most once per slot.
 
-[tokens]
-# Whitelisted MRC-20 contracts. Empty + network=mainnet loads the Station
-# mainnet defaults (bridged names distinguish USDC.e vs a BSC twin, etc.).
-# Token rows are derived locally from SC events — they never cross the
-# peer wire, so older siblings keep syncing events as before.
-enabled = true
-rescan_pause_ms = 5
-rescan_batch = 256
-
 # Fill these in with the public gRPC addresses of your sibling indexers:
 # [peer.peers.east]
 # url = "https://indexer-east.example.com:9443"

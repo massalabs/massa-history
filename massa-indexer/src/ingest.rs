@@ -1418,7 +1418,6 @@ fn is_zero_value(v: &TransferValue) -> bool {
         TransferValue::Coins { nmas } => *nmas == 0,
         TransferValue::DeferredCredits { nmas } => *nmas == 0,
         TransferValue::Rolls { count } => *count == 0,
-        TransferValue::Token { raw, .. } => raw.bytes().all(|b| b == b'0') || raw.is_empty(),
         TransferValue::Unknown => true,
     }
 }

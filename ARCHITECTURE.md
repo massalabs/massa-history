@@ -225,16 +225,6 @@ url = "http://192.168.0.29:9443"
 # [peer.peers.indexer3]
 # url = "http://86.205.18.20:9443"
 
-# Whitelisted MRC-20 contracts. Empty + network=mainnet → Station defaults.
-# Token rows are derived locally from SC events + successful CallSC ops
-# and never cross the peer wire, so a host that does not yet run this
-# code still syncs events and operations. Historical rescan runs on a
-# dedicated thread and resumes from a checkpoint if interrupted.
-[tokens]
-enabled = true
-rescan_pause_ms = 5
-rescan_batch = 256
-
 # Legacy block-storer (DynamoDB) one-shot importer — see §9.
 # Credentials and the `enabled` flag come from the systemd
 # EnvironmentFile at /etc/default/massa-indexer-legacy on the
@@ -1236,70 +1226,6 @@ url = "http://192.168.0.29:9443"
 > parser ignores unknown fields, so leaving them in the file is
 > harmless during the rolling restart but they should be removed
 > on the next config bump.
-
-### 8.4 MRC-20 token index (derived, local-only)
-
-Whitelisted MRC-20 movements are derived locally at two existing
-choke points:
-
-- `Db::write_sc_event` — colon-separated payloads
-  (`TRANSFER:from:to:amount`, `MINT:to:amount`, `BURN:from:amount`,
-  WMAS `DEPOSIT`/`WITHDRAW` aliases).
-- `Db::write_op` — CallSC operations that **target** a whitelist
-  contract. Official `@massalabs/sc-standards` tokens emit only
-  `"TRANSFER SUCCESS"` / `"APPROVAL SUCCESS"` (no from/to/amount).
-  Those movements are recovered from `target_function` + Massa-Args
-  `parameter_hex` (`transfer`, `transferFrom`, `mint`, `burn`,
-  WMAS `deposit` via forwarded coins, WMAS `withdraw` as
-  `u64le amount + recipient`). Approvals are ignored.
-
-Rows live in `cf_token_transfer` + address/contract/op/block
-indexes. Inner calls (a DEX calling `transfer` on USDC) do not
-appear as a CallSC targeting the token and are **not guessed**.
-
-**This does not bump `SCHEMA_VERSION` and does not change the peer
-wire format.** Token CFs are additive derived data each host computes
-locally. Consequences for a rolling deploy:
-
-- An older sibling (idx2 / idx3) keeps syncing **events and ops**
-  with a newer idx1. Token rows never travel over gRPC. After that
-  sibling is upgraded it rescans its own event + op history and
-  derives the same token rows. Restarting idx2 later is safe: it
-  will create the new CFs on open, keep the schema-2 handshake
-  with idx1 and idx3, and backfill whatever events/ops it is
-  missing in both directions.
-- Rolling an *older* binary onto a DB that already created the
-  token CFs will fail to open (RocksDB requires every existing CF
-  to be listed). Drop those CFs first to roll back. Rolling
-  *forward* is always safe (`create_missing_column_families`).
-
-On boot the indexer compares `cf_meta/tokens_whitelist_hash` (and
-the JSON `tokens_rescan_checkpoint`) with the current `[tokens]`
-fingerprint (whitelist + decoder version). A missing or changed
-hash starts a historical walk; an interrupted walk **resumes**
-from the last completed page (contract + cursor). The walker runs
-on a dedicated OS thread named `token-rescan` — not a tokio worker
-— and writes one RocksDB batch per page, then sleeps
-`rescan_pause_ms`. Live ingest, gRPC, and peer sync stay on the
-async runtime and are not pinned by the walk.
-
-Phase 1 walks inbound **successfully executed** CallSC ops
-(`final_exec_status = ok`) for every whitelist contract
-(`transfer` / `transferFrom` / `mint` / `burn` / WMAS wrap).
-Failed executions are ignored. Phase 2 then walks colon-separated
-event strings (the preferred source when a contract actually emits
-from/to/amount). Official Station events are only
-`"TRANSFER SUCCESS"`, so the CallSC fallback is what fills those
-rows. `ExecuteSC` and nested DEX calls are not guessed — they do
-not target the token as a CallSC. Editing the whitelist — or
-shipping a decoder fix — and restarting indexes that contract's
-full history without a chain wipe. A restart mid-walk does not
-redo finished contracts.
-
-The public API is the existing `GET /v1/addresses/:addr/transfers`
-endpoint, now merging native MAS rows with token rows (`value.kind
-= "token"`). Optional `since` / `until` (RFC-3339) and `order=asc|desc`
-are additive. `GET /v1/tokens` returns the active whitelist.
 
 …symmetrically on `indexer2` (peers: indexer1 + indexer3) and
 `indexer3` (peers: indexer1 + indexer2). To add a fourth host you'd
