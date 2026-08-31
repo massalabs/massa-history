@@ -26,7 +26,7 @@ use crate::{
         MetaRow, SlotState, StoredBlock, StoredDenunciationEntry, StoredEndorsement,
         StoredOperation, StoredScEvent, StoredTransfer,
     },
-    token::{self, StoredTokenTransfer, TokenRegistry},
+    token::{self, StoredTokenTransfer, TokenRegistry, TokenRescanCheckpoint, TokenRescanPhase},
     Error, Result,
 };
 use rocksdb::{
@@ -192,6 +192,9 @@ pub mod meta_keys {
     /// SHA-256 hex of the active token whitelist. Compared on boot to
     /// decide which contracts need an emitter-scoped rescan.
     pub const TOKENS_WHITELIST_HASH: &str = "tokens_whitelist_hash";
+    /// JSON [`crate::token::TokenRescanCheckpoint`] so a restart resumes
+    /// the historical walk instead of starting over.
+    pub const TOKENS_RESCAN_CHECKPOINT: &str = "tokens_rescan_checkpoint";
 }
 
 // ---------------------------------------------------------------------------
@@ -1385,6 +1388,138 @@ impl Db {
         Ok(())
     }
 
+    pub fn read_tokens_rescan_checkpoint(&self) -> Result<Option<TokenRescanCheckpoint>> {
+        let cf = self.cf(CF_META)?;
+        match self
+            .inner
+            .get_cf(cf, meta_keys::TOKENS_RESCAN_CHECKPOINT.as_bytes())?
+        {
+            None => Ok(None),
+            Some(raw) => Ok(serde_json::from_slice(&raw).ok()),
+        }
+    }
+
+    pub fn write_tokens_rescan_checkpoint(&self, ck: &TokenRescanCheckpoint) -> Result<()> {
+        let raw =
+            serde_json::to_vec(ck).map_err(|e| Error::other(format!("rescan checkpoint: {e}")))?;
+        self.inner.put_cf(
+            self.cf(CF_META)?,
+            meta_keys::TOKENS_RESCAN_CHECKPOINT.as_bytes(),
+            raw,
+        )?;
+        Ok(())
+    }
+
+    /// One paced page of the historical token walk. Returns `true` when
+    /// the fingerprint is fully caught up (or the whitelist is empty).
+    /// Safe to call from a dedicated OS thread: one WriteBatch per page,
+    /// no long-lived lock beyond the RocksDB write itself.
+    pub fn token_rescan_step(&self, batch: usize) -> Result<bool> {
+        let wanted = self.tokens.fingerprint();
+        if self.tokens.is_empty() {
+            let ck = TokenRescanCheckpoint::done(&wanted);
+            self.write_tokens_rescan_checkpoint(&ck)?;
+            self.write_tokens_whitelist_hash(&wanted)?;
+            return Ok(true);
+        }
+        let addrs: Vec<_> = self.tokens.addresses().cloned().collect();
+        let stored_hash = self.read_tokens_whitelist_hash()?;
+        let mut ck = match self.read_tokens_rescan_checkpoint()? {
+            Some(c) if c.fingerprint == wanted => c,
+            _ => {
+                // An older binary only stored the hash. Matching hash
+                // means that walk already finished — do not redo it.
+                if stored_hash.as_deref() == Some(wanted.as_str()) {
+                    let ck = TokenRescanCheckpoint::done(&wanted);
+                    self.write_tokens_rescan_checkpoint(&ck)?;
+                    return Ok(true);
+                }
+                TokenRescanCheckpoint::fresh(&wanted)
+            }
+        };
+        if ck.done {
+            if stored_hash.as_deref() != Some(wanted.as_str()) {
+                self.write_tokens_whitelist_hash(&wanted)?;
+            }
+            return Ok(true);
+        }
+        if ck.contract_idx >= addrs.len() {
+            ck.advance(None, addrs.len());
+            self.write_tokens_rescan_checkpoint(&ck)?;
+            return Ok(ck.done);
+        }
+        let addr = &addrs[ck.contract_idx];
+        let after = ck.cursor_bytes();
+        let (seen, _parsed, next) = match ck.phase {
+            TokenRescanPhase::Ops => {
+                self.rescan_token_ops_page(addr, after.as_deref(), batch.max(1))?
+            }
+            TokenRescanPhase::Events => {
+                self.rescan_token_page(addr, after.as_deref(), batch.max(1))?
+            }
+        };
+        let _ = seen;
+        ck.advance(next, addrs.len());
+        self.write_tokens_rescan_checkpoint(&ck)?;
+        if ck.done {
+            self.write_tokens_whitelist_hash(&wanted)?;
+        }
+        Ok(ck.done)
+    }
+
+    /// `true` when this fingerprint already finished (including a hash
+    /// written by an older binary that had no checkpoint).
+    pub fn token_rescan_already_done(&self) -> bool {
+        let wanted = self.tokens.fingerprint();
+        if let Ok(Some(c)) = self.read_tokens_rescan_checkpoint() {
+            if c.fingerprint == wanted {
+                return c.done;
+            }
+            return false;
+        }
+        matches!(self.read_tokens_whitelist_hash(), Ok(Some(h)) if h == wanted)
+    }
+
+    /// Blocking historical walk. Must run on a dedicated OS thread so
+    /// RocksDB page scans never pin a tokio worker used by ingest / gRPC.
+    pub fn run_token_rescan_blocking(&self, pause: std::time::Duration, batch: usize) {
+        let wanted = self.tokens.fingerprint();
+        if self.token_rescan_already_done() {
+            if let Err(e) = self.token_rescan_step(batch) {
+                tracing::warn!(error = %e, "failed to persist completed token rescan mark");
+            }
+            tracing::info!("token whitelist unchanged; skip historical rescan");
+            return;
+        }
+        let resume = matches!(
+            self.read_tokens_rescan_checkpoint(),
+            Ok(Some(c)) if c.fingerprint == wanted && !c.done
+        );
+        tracing::info!(
+            fingerprint = %wanted,
+            batch,
+            resume,
+            "token whitelist rescan on dedicated thread"
+        );
+        loop {
+            match self.token_rescan_step(batch) {
+                Ok(true) => {
+                    tracing::info!("token whitelist rescan complete");
+                    return;
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    tracing::warn!(error = %e, "token rescan page failed; will retry");
+                    std::thread::sleep(pause.max(std::time::Duration::from_millis(50)));
+                    continue;
+                }
+            }
+            if !pause.is_zero() {
+                std::thread::sleep(pause);
+            }
+        }
+    }
+
     /// Decode up to `limit` events emitted by `addr` into token rows.
     /// Used by the startup rescan so a whitelist edit (or first boot)
     /// reconstructs history from events already on disk.
@@ -1397,6 +1532,7 @@ impl Db {
         let page = self.iter_sc_events_by_emitter(addr, after, limit)?;
         let mut parsed = 0u64;
         let mut seen = 0u64;
+        let mut batch = WriteBatch::default();
         for ev in &page.items {
             seen += 1;
             if ev.status != crate::model::SlotStatus::Final {
@@ -1405,19 +1541,13 @@ impl Db {
             let before = self
                 .read_token_transfer(ev.slot.period, ev.slot.thread, ev.index_in_slot)?
                 .is_some();
-            // Re-run the choke-point writer; idempotent overwrite.
-            // We only need the token side — the event row is already there.
-            let mut batch = WriteBatch::default();
             self.maybe_put_token_from_event(&mut batch, ev)?;
-            self.inner.write(batch)?;
             if !before {
-                if self
-                    .read_token_transfer(ev.slot.period, ev.slot.thread, ev.index_in_slot)?
-                    .is_some()
-                {
-                    parsed += 1;
-                }
+                parsed += 1;
             }
+        }
+        if !page.items.is_empty() {
+            self.inner.write(batch)?;
         }
         if let Some(m) = &self.metrics {
             m.token_rescan_events_total
@@ -1438,6 +1568,7 @@ impl Db {
         let page = self.iter_ops_by_target(addr, after, limit)?;
         let mut parsed = 0u64;
         let mut seen = 0u64;
+        let mut batch = WriteBatch::default();
         for id in &page.items {
             seen += 1;
             let Some(op) = self.read_op(id)? else {
@@ -1451,16 +1582,13 @@ impl Db {
                     .is_some(),
                 None => false,
             };
-            let mut batch = WriteBatch::default();
             self.maybe_put_token_from_op(&mut batch, &op)?;
-            self.inner.write(batch)?;
             if !before {
-                if let Some(s) = slot {
-                    if self.read_token_transfer(s.period, s.thread, idx)?.is_some() {
-                        parsed += 1;
-                    }
-                }
+                parsed += 1;
             }
+        }
+        if !page.items.is_empty() {
+            self.inner.write(batch)?;
         }
         if let Some(m) = &self.metrics {
             m.token_rescan_events_total
@@ -3340,5 +3468,127 @@ mod tests {
         let row = db.read_token_transfer(3, 1, idx).unwrap().unwrap();
         assert_eq!(row.raw_amount, "7");
         assert_eq!(row.from.as_deref(), Some(from.to_string().as_str()));
+    }
+
+    #[test]
+    fn token_rescan_step_resumes_after_interrupt() {
+        use crate::config::TokenEntry;
+        use crate::ids::mk_test_sc_addr;
+        use crate::model::{OperationDetails, OperationInclusion, OperationKind, ExecStatus};
+        use crate::token::{token_index_from_op_id, TokenRegistry};
+        let c1 = mk_test_sc_addr(21);
+        let c2 = mk_test_sc_addr(22);
+        let from = mk_test_user_addr(10);
+        let to = mk_test_user_addr(11);
+        let mut buf = Vec::new();
+        let tb = to.as_str().as_bytes();
+        buf.extend_from_slice(&(tb.len() as u32).to_le_bytes());
+        buf.extend_from_slice(tb);
+        let mut amt = 3u64.to_le_bytes().to_vec();
+        amt.resize(32, 0);
+        buf.extend_from_slice(&amt);
+        let tokens = TokenRegistry::from_entries(&[
+            TokenEntry {
+                address: c1.to_string(),
+                symbol: "A".into(),
+                name: "A".into(),
+                decimals: 0,
+            },
+            TokenEntry {
+                address: c2.to_string(),
+                symbol: "B".into(),
+                name: "B".into(),
+                decimals: 0,
+            },
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(dir.path(), "lz4", 4).unwrap();
+        let mut ids = Vec::new();
+        for (i, target) in [c1.clone(), c1.clone(), c2.clone()].into_iter().enumerate() {
+            let op_id = mk_test_op_id(200 + i as u64);
+            ids.push((target.clone(), op_id.clone()));
+            db.write_op(&StoredOperation {
+                id: op_id,
+                creator: from.clone(),
+                target: Some(target),
+                kind: OperationKind::CallSc,
+                expire_period: 10,
+                fee_nmas: 0,
+                thread: 0,
+                inclusions: vec![OperationInclusion {
+                    slot: Slot::new(4, i as u8),
+                    block_id: mk_test_block_id(20 + i as u64),
+                }],
+                candidate_exec_status: None,
+                final_exec_status: Some(ExecStatus::Ok),
+                details: OperationDetails {
+                    target_function: Some("transfer".into()),
+                    parameter_hex: Some(hex::encode(&buf)),
+                    ..Default::default()
+                },
+                signature: String::new(),
+                content_creator_pub_key: String::new(),
+                serialized_size: 0,
+                raw_signed_op_b64: String::new(),
+                first_seen_ts_ms: 0,
+            })
+            .unwrap();
+        }
+        // Failed CallSC must not become a token row even after rescan.
+        db.write_op(&StoredOperation {
+            id: mk_test_op_id(299),
+            creator: from.clone(),
+            target: Some(c1.clone()),
+            kind: OperationKind::CallSc,
+            expire_period: 10,
+            fee_nmas: 0,
+            thread: 0,
+            inclusions: vec![OperationInclusion {
+                slot: Slot::new(4, 9),
+                block_id: mk_test_block_id(99),
+            }],
+            candidate_exec_status: Some(ExecStatus::Ok),
+            final_exec_status: Some(ExecStatus::Failed),
+            details: OperationDetails {
+                target_function: Some("transfer".into()),
+                parameter_hex: Some(hex::encode(&buf)),
+                ..Default::default()
+            },
+            signature: String::new(),
+            content_creator_pub_key: String::new(),
+            serialized_size: 0,
+            raw_signed_op_b64: String::new(),
+            first_seen_ts_ms: 0,
+        })
+        .unwrap();
+
+        let db = db.with_tokens(tokens);
+        assert!(!db.token_rescan_already_done());
+        // batch=1 forces several steps so we can interrupt mid-walk.
+        assert!(!db.token_rescan_step(1).unwrap());
+        let mid = db.read_tokens_rescan_checkpoint().unwrap().unwrap();
+        assert!(!mid.done);
+        assert_eq!(mid.fingerprint, db.token_registry().fingerprint());
+        // Resume as if the process restarted.
+        let mut steps = 0u32;
+        while !db.token_rescan_step(1).unwrap() {
+            steps += 1;
+            assert!(steps < 32, "rescan did not finish");
+        }
+        assert!(db.token_rescan_already_done());
+        let fin = db.read_tokens_rescan_checkpoint().unwrap().unwrap();
+        assert!(fin.done);
+        for (target, op_id) in &ids {
+            let idx = token_index_from_op_id(op_id.as_str());
+            // slot thread = index in the write loop
+            let thread = if target == &c2 { 2 } else if op_id == &ids[1].1 { 1 } else { 0 };
+            let row = db.read_token_transfer(4, thread, idx).unwrap();
+            assert!(row.is_some(), "missing row for {op_id}");
+        }
+        let failed_idx = token_index_from_op_id(mk_test_op_id(299).as_str());
+        assert!(db.read_token_transfer(4, 9, failed_idx).unwrap().is_none());
+        // A second boot with the same fingerprint is a no-op.
+        assert!(db.token_rescan_already_done());
+        assert!(db.token_rescan_step(1).unwrap());
     }
 }

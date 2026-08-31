@@ -226,9 +226,10 @@ url = "http://192.168.0.29:9443"
 # url = "http://86.205.18.20:9443"
 
 # Whitelisted MRC-20 contracts. Empty + network=mainnet → Station defaults.
-# Token rows are derived locally from SC events + CallSC ops and never
-# cross the peer wire, so a host that does not yet run this code still
-# syncs events and operations.
+# Token rows are derived locally from SC events + successful CallSC ops
+# and never cross the peer wire, so a host that does not yet run this
+# code still syncs events and operations. Historical rescan runs on a
+# dedicated thread and resumes from a checkpoint if interrupted.
 [tokens]
 enabled = true
 rescan_pause_ms = 5
@@ -1272,13 +1273,28 @@ locally. Consequences for a rolling deploy:
   to be listed). Drop those CFs first to roll back. Rolling
   *forward* is always safe (`create_missing_column_families`).
 
-On boot the indexer compares `cf_meta/tokens_whitelist_hash` with
-the current `[tokens]` fingerprint (whitelist + decoder version).
-A missing or changed hash triggers a two-phase rescan (paced by
-`rescan_pause_ms`): inbound CallSC ops for every contract first
-(so every asset is queryable within seconds), then colon-separated
-events. Editing the whitelist — or shipping a decoder fix — and
-restarting indexes that contract's full history without a chain wipe.
+On boot the indexer compares `cf_meta/tokens_whitelist_hash` (and
+the JSON `tokens_rescan_checkpoint`) with the current `[tokens]`
+fingerprint (whitelist + decoder version). A missing or changed
+hash starts a historical walk; an interrupted walk **resumes**
+from the last completed page (contract + cursor). The walker runs
+on a dedicated OS thread named `token-rescan` — not a tokio worker
+— and writes one RocksDB batch per page, then sleeps
+`rescan_pause_ms`. Live ingest, gRPC, and peer sync stay on the
+async runtime and are not pinned by the walk.
+
+Phase 1 walks inbound **successfully executed** CallSC ops
+(`final_exec_status = ok`) for every whitelist contract
+(`transfer` / `transferFrom` / `mint` / `burn` / WMAS wrap).
+Failed executions are ignored. Phase 2 then walks colon-separated
+event strings (the preferred source when a contract actually emits
+from/to/amount). Official Station events are only
+`"TRANSFER SUCCESS"`, so the CallSC fallback is what fills those
+rows. `ExecuteSC` and nested DEX calls are not guessed — they do
+not target the token as a CallSC. Editing the whitelist — or
+shipping a decoder fix — and restarting indexes that contract's
+full history without a chain wipe. A restart mid-walk does not
+redo finished contracts.
 
 The public API is the existing `GET /v1/addresses/:addr/transfers`
 endpoint, now merging native MAS rows with token rows (`value.kind

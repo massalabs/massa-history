@@ -117,16 +117,20 @@ pub async fn run(config: Config) -> Result<()> {
     // ingest worker
     let ingest = Ingest::new(db.clone(), sse.clone(), rx).with_metrics(metrics.clone());
 
-    // Emitter-scoped token rescan — covers history already on disk and
-    // any newly added whitelist contract. Paced so live ingest stays
-    // responsive. First boot (no stored hash) rescans every contract.
+    // Historical token rescan on a dedicated OS thread (not a tokio
+    // worker). Live ingest / gRPC / peer stay on the async runtime;
+    // the walker only takes short RocksDB write batches and sleeps
+    // between pages. A crash mid-walk resumes from cf_meta checkpoint.
     {
         let db_r = db.clone();
         let pause = Duration::from_millis(config.tokens.rescan_pause_ms);
         let batch = config.tokens.rescan_batch.max(1);
-        tokio::spawn(async move {
-            run_token_rescan(db_r, pause, batch).await;
-        });
+        if let Err(e) = std::thread::Builder::new()
+            .name("token-rescan".into())
+            .spawn(move || db_r.run_token_rescan_blocking(pause, batch))
+        {
+            warn!(error = %e, "failed to spawn token-rescan thread");
+        }
     }
     let ingest_tx = tx.clone();
     let ingest_handle = tokio::spawn(ingest.run());
@@ -375,91 +379,6 @@ async fn wait_for_shutdown() {
     {
         tokio::signal::ctrl_c().await.ok();
         info!("SIGINT received");
-    }
-}
-
-/// Walk each whitelisted contract's event index **and** inbound CallSC
-/// ops, then (re)derive token rows. Official MRC-20 events are only
-/// `"TRANSFER SUCCESS"`; the amounts live on the ops. Completeness is
-/// idempotent: live ingest / peer patches writing the same rows
-/// concurrently just overwrite the same keys.
-async fn run_token_rescan(db: Db, pause: Duration, batch: usize) {
-    let wanted = db.token_registry().fingerprint();
-    match db.read_tokens_whitelist_hash() {
-        Ok(Some(stored)) if stored == wanted => {
-            info!("token whitelist unchanged; skip historical rescan");
-            return;
-        }
-        Ok(_) => {}
-        Err(e) => {
-            warn!(error = %e, "failed to read token whitelist hash; running rescan");
-        }
-    }
-    if db.token_registry().is_empty() {
-        if let Err(e) = db.write_tokens_whitelist_hash(&wanted) {
-            warn!(error = %e, "failed to persist empty token whitelist hash");
-        }
-        return;
-    }
-    let addrs: Vec<_> = db.token_registry().addresses().cloned().collect();
-    info!(contracts = addrs.len(), batch, "token whitelist rescan starting");
-    // Phase 1: every contract's inbound CallSC ops. Official MRC-20
-    // amounts live here, and the op index is tiny vs the event log.
-    // Doing this globally (not interleaved with events) means every
-    // whitelist asset is queryable within seconds of boot.
-    for addr in &addrs {
-        let mut after: Option<Vec<u8>> = None;
-        let mut walked_ops = 0u64;
-        loop {
-            match db.rescan_token_ops_page(addr, after.as_deref(), batch) {
-                Ok((seen, _parsed, next)) => {
-                    walked_ops += seen;
-                    match next {
-                        Some(c) => after = Some(c),
-                        None => break,
-                    }
-                }
-                Err(e) => {
-                    warn!(error = %e, contract = %addr, "token rescan ops page failed");
-                    break;
-                }
-            }
-            tokio::task::yield_now().await;
-            if !pause.is_zero() {
-                tokio::time::sleep(pause).await;
-            }
-        }
-        info!(contract = %addr, ops = walked_ops, "token rescan ops done");
-    }
-    // Phase 2: colon-separated event strings (older / non-Station tokens).
-    for addr in &addrs {
-        let mut after: Option<Vec<u8>> = None;
-        let mut walked = 0u64;
-        loop {
-            match db.rescan_token_page(addr, after.as_deref(), batch) {
-                Ok((seen, _parsed, next)) => {
-                    walked += seen;
-                    match next {
-                        Some(c) => after = Some(c),
-                        None => break,
-                    }
-                }
-                Err(e) => {
-                    warn!(error = %e, contract = %addr, "token rescan page failed");
-                    break;
-                }
-            }
-            tokio::task::yield_now().await;
-            if !pause.is_zero() {
-                tokio::time::sleep(pause).await;
-            }
-        }
-        info!(contract = %addr, events = walked, "token rescan events done");
-    }
-    if let Err(e) = db.write_tokens_whitelist_hash(&wanted) {
-        warn!(error = %e, "failed to persist token whitelist hash");
-    } else {
-        info!("token whitelist rescan complete");
     }
 }
 

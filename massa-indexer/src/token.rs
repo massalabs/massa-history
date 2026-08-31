@@ -8,14 +8,15 @@
 //! still sync events and ops (and therefore, after it upgrades, the same
 //! token rows).
 //!
-//! Official `@massalabs/sc-standards` MRC-20 contracts emit only
-//! `"TRANSFER SUCCESS"` / `"APPROVAL SUCCESS"` — the string has no
-//! from/to/amount. Those movements are recovered from the CallSC
-//! `target_function` + Massa-Args `parameter_hex` on operations that
-//! target a whitelisted contract (`transfer`, `transferFrom`, `mint`,
-//! `burn`, WMAS `deposit`/`withdraw`). Colon-separated event strings
-//! (`TRANSFER:from:to:amount`) are still decoded when a contract uses
-//! that older format.
+//! Rich colon-separated event strings (`TRANSFER:from:to:amount`) are
+//! the preferred source when a contract emits them. Official
+//! `@massalabs/sc-standards` MRC-20 contracts emit only
+//! `"TRANSFER SUCCESS"` / `"APPROVAL SUCCESS"` — no from/to/amount —
+//! so the fallback is a **successfully executed** CallSC that targets
+//! the whitelist (`final_exec_status = ok`) whose `target_function` +
+//! Massa-Args `parameter_hex` decode as `transfer` / `transferFrom` /
+//! `mint` / `burn` / WMAS `deposit`/`withdraw`. Failed executions are
+//! ignored. `ExecuteSC` and nested DEX calls are not guessed.
 //!
 //! Inner calls (a DEX SC calling `transfer` on USDC) do not appear as
 //! a CallSC targeting the token and cannot be reconstructed from the
@@ -149,7 +150,7 @@ impl TokenRegistry {
 
     /// Bump when the decoder changes so a rolling restart re-derives
     /// history without a whitelist edit. Not a schema version.
-    pub const DECODER_VERSION: u8 = 4;
+    pub const DECODER_VERSION: u8 = 5;
 
     /// Stable fingerprint stored in `cf_meta` so a whitelist edit (or
     /// decoder bump) triggers an emitter-scoped rescan on the next boot.
@@ -168,6 +169,81 @@ impl TokenRegistry {
             hasher.update([0xff]);
         }
         hex::encode(hasher.finalize())
+    }
+}
+
+/// Durable cursor for the historical token rescan. Written after every
+/// page so a restart (or adding a contract mid-walk) resumes instead of
+/// replaying the whole event log.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenRescanCheckpoint {
+    pub fingerprint: String,
+    pub phase: TokenRescanPhase,
+    pub contract_idx: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor_hex: Option<String>,
+    #[serde(default)]
+    pub done: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TokenRescanPhase {
+    Ops,
+    Events,
+}
+
+impl TokenRescanCheckpoint {
+    pub fn fresh(fingerprint: impl Into<String>) -> Self {
+        Self {
+            fingerprint: fingerprint.into(),
+            phase: TokenRescanPhase::Ops,
+            contract_idx: 0,
+            cursor_hex: None,
+            done: false,
+        }
+    }
+
+    pub fn done(fingerprint: impl Into<String>) -> Self {
+        Self {
+            fingerprint: fingerprint.into(),
+            phase: TokenRescanPhase::Events,
+            contract_idx: 0,
+            cursor_hex: None,
+            done: true,
+        }
+    }
+
+    pub fn cursor_bytes(&self) -> Option<Vec<u8>> {
+        self.cursor_hex.as_ref().and_then(|h| hex::decode(h).ok())
+    }
+
+    /// Advance after a page. `next` is the iterator cursor when more rows
+    /// remain for this contract; `n_contracts` is the live whitelist size.
+    pub fn advance(&mut self, next: Option<Vec<u8>>, n_contracts: usize) {
+        if n_contracts == 0 {
+            self.done = true;
+            self.cursor_hex = None;
+            return;
+        }
+        if let Some(c) = next {
+            self.cursor_hex = Some(hex::encode(c));
+            return;
+        }
+        self.cursor_hex = None;
+        self.contract_idx = self.contract_idx.saturating_add(1);
+        if self.contract_idx >= n_contracts {
+            match self.phase {
+                TokenRescanPhase::Ops => {
+                    self.phase = TokenRescanPhase::Events;
+                    self.contract_idx = 0;
+                }
+                TokenRescanPhase::Events => {
+                    self.done = true;
+                    self.contract_idx = 0;
+                }
+            }
+        }
     }
 }
 
@@ -536,14 +612,11 @@ pub fn op_is_indexable(op: &StoredOperation) -> bool {
     if op.inclusions.is_empty() {
         return false;
     }
-    match op.final_exec_status {
-        Some(ExecStatus::Failed) => return false,
-        Some(ExecStatus::Ok) => {}
-        None => {
-            if op.candidate_exec_status == Some(ExecStatus::Failed) {
-                return false;
-            }
-        }
+    // Only a FINAL successful execution. Candidate-ok / unknown is not
+    // enough: a later fail must not leave a movement row, and ExecuteSC
+    // / nested DEX calls are never guessed from this path.
+    if op.final_exec_status != Some(ExecStatus::Ok) {
+        return false;
     }
     let fn_name = op.details.target_function.as_deref().unwrap_or("");
     parse_callsc_token(
@@ -589,7 +662,7 @@ pub fn token_row_from_op(
         operation_id: Some(op.id.to_string()),
         block_id: Some(inc.block_id.to_string()),
         block_timestamp_ms,
-        is_final: op.final_exec_status == Some(ExecStatus::Ok) || op.final_exec_status.is_none(),
+        is_final: op.final_exec_status == Some(ExecStatus::Ok),
         first_seen_ts_ms: now_ms,
     })
 }
@@ -1184,5 +1257,35 @@ mod tests {
             o
         };
         assert!(token_row_from_op(&failed, &info, 1, 2).is_none());
+        let pending = {
+            let mut o = op.clone();
+            o.final_exec_status = None;
+            o.candidate_exec_status = Some(ExecStatus::Ok);
+            o
+        };
+        assert!(token_row_from_op(&pending, &info, 1, 2).is_none());
+    }
+
+    #[test]
+    fn rescan_checkpoint_resumes_and_finishes() {
+        let mut ck = TokenRescanCheckpoint::fresh("abc");
+        assert_eq!(ck.phase, TokenRescanPhase::Ops);
+        assert!(!ck.done);
+        ck.advance(Some(vec![1, 2, 3]), 2);
+        assert_eq!(ck.contract_idx, 0);
+        assert_eq!(ck.cursor_bytes().as_deref(), Some(&[1, 2, 3][..]));
+        ck.advance(None, 2);
+        assert_eq!(ck.contract_idx, 1);
+        assert!(ck.cursor_hex.is_none());
+        ck.advance(None, 2);
+        assert_eq!(ck.phase, TokenRescanPhase::Events);
+        assert_eq!(ck.contract_idx, 0);
+        assert!(!ck.done);
+        ck.advance(None, 2);
+        ck.advance(None, 2);
+        assert!(ck.done);
+        let raw = serde_json::to_vec(&ck).unwrap();
+        let back: TokenRescanCheckpoint = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(back, ck);
     }
 }
