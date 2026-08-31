@@ -475,7 +475,7 @@ export function AddressDetail() {
               <TransfersTable
                 transfers={transfers.data?.data ?? []}
                 highlight={addr}
-                emptyLabel="No transfers recorded for this address (node may not be running with execution-trace)."
+                emptyLabel="No transfers recorded for this address."
               />
               <Paginator
                 page={transfersPaged.page}

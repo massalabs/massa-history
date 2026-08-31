@@ -13,7 +13,8 @@ function formatOrigin(o: CoinOrigin): string {
     .replace("abi ", "abi-")
     .replace("async msg", "async-msg")
     .replace("callsc", "call-sc")
-    .replace("executesc", "execute-sc");
+    .replace("executesc", "execute-sc")
+    .replace("mrc20 ", "MRC-20 ");
 }
 
 /** Turn a TransferValue into a human-readable amount + unit chip.
@@ -176,9 +177,20 @@ function SourceCell({ t }: { t: StoredTransfer }) {
 function AssetCell({ value }: { value: TransferValue }) {
   if (value.kind === "token") {
     return (
-      <span className="font-mono text-xs" title={value.name || value.contract}>
-        {value.symbol || "token"}
-      </span>
+      <div className="leading-tight max-w-[16rem]">
+        <Link
+          to={`/address/${value.contract}`}
+          className="font-mono text-xs"
+          title={value.contract}
+        >
+          {value.symbol || "token"}
+        </Link>
+        {value.name ? (
+          <div className="text-[10px] text-slate-500 truncate" title={value.name}>
+            {value.name}
+          </div>
+        ) : null}
+      </div>
     );
   }
   if (value.kind === "rolls") {
@@ -243,7 +255,7 @@ export function TransfersTable({
             return (
               <tr
                 key={`${t.slot.period}-${t.slot.thread}-${t.index_in_slot}-${t.id || i}`}
-                className="border-t border-slate-200 align-top"
+                className="border-t border-border align-top"
                 title={t.id ? `id ${t.id}` : undefined}
               >
                 {showSlot && (

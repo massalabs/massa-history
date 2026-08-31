@@ -992,14 +992,20 @@ impl Db {
             return Ok(());
         };
         if !token::op_is_indexable(op) {
-            if let Some(inc) = op.inclusions.first() {
-                let idx = token::token_index_from_op_id(op.id.as_str());
-                self.delete_token_at_slot_index(
-                    batch,
-                    inc.slot.period,
-                    inc.slot.thread,
-                    idx,
-                )?;
+            // Only a definitive FINAL failure may drop a derived row.
+            // Candidate / unknown rewrites (block re-inclusion, peer
+            // first-write) must not erase a row the rescan or a prior
+            // final-ok write already stored.
+            if op.final_exec_status == Some(crate::model::ExecStatus::Failed) {
+                if let Some(inc) = op.inclusions.first() {
+                    let idx = token::token_index_from_op_id(op.id.as_str());
+                    self.delete_token_at_slot_index(
+                        batch,
+                        inc.slot.period,
+                        inc.slot.thread,
+                        idx,
+                    )?;
+                }
             }
             return Ok(());
         }
@@ -1542,7 +1548,7 @@ impl Db {
                 .read_token_transfer(ev.slot.period, ev.slot.thread, ev.index_in_slot)?
                 .is_some();
             self.maybe_put_token_from_event(&mut batch, ev)?;
-            if !before {
+            if !before && token::parse_mrc20_event(&ev.data).is_some() {
                 parsed += 1;
             }
         }
@@ -1583,7 +1589,7 @@ impl Db {
                 None => false,
             };
             self.maybe_put_token_from_op(&mut batch, &op)?;
-            if !before {
+            if !before && token::op_is_indexable(&op) {
                 parsed += 1;
             }
         }
@@ -3399,6 +3405,14 @@ mod tests {
             .iter_token_transfers_by_addr(&from, &TransferScan::newest(10))
             .unwrap();
         assert_eq!(page.items.len(), 1);
+
+        // A candidate rewrite must not drop a row produced by a prior
+        // final-ok write (block re-inclusion / exec-status update).
+        let mut cand = op.clone();
+        cand.final_exec_status = None;
+        cand.candidate_exec_status = Some(ExecStatus::Ok);
+        db.write_op(&cand).unwrap();
+        assert!(db.read_token_transfer(12, 2, idx).unwrap().is_some());
 
         // Failed rewrite drops the derived row.
         let mut failed = op.clone();
