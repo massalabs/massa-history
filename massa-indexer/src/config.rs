@@ -31,6 +31,71 @@ pub struct Config {
     /// the normal way to stop it. See `src/legacy/oneshot.rs`.
     #[serde(default)]
     pub legacy_ddb: LegacyDdb,
+    /// One-shot, operator-driven repair tasks (see `src/repair.rs`).
+    /// Everything here is idempotent and checkpointed in `cf_meta`, so a
+    /// restart resumes instead of redoing work.
+    #[serde(default)]
+    pub repair: Repair,
+}
+
+/// `[repair]` — targeted one-shot maintenance. All three tools are safe
+/// to leave enabled: each one resumes from its `cf_meta` checkpoint and
+/// exits once its range is done.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Repair {
+    /// Inclusive period ranges whose FINAL slots are re-offered to peers
+    /// once (first backfill sweep after startup) even though they look
+    /// complete locally. Lets the chain-linkage arbiter settle divergent
+    /// FINAL verdicts left behind by a node that finalised a dead fork.
+    /// Example: `recheck_periods = [[4608110, 4608120]]`.
+    #[serde(default)]
+    pub recheck_periods: Vec<(u64, u64)>,
+    #[serde(default)]
+    pub reconstruct_transfers: ReconstructTransfers,
+    #[serde(default)]
+    pub pull_parts: PullParts,
+}
+
+/// `[repair.reconstruct_transfers]` — rebuild the transfer rows the node
+/// never delivered (transfers stream down / `Unimplemented`) for FINAL
+/// slots in `[from_period, to_period]`, from the executed operations we
+/// already hold. Only exact, operation-derived movements are produced
+/// (`Transaction` amounts of successfully executed ops); rewards, fees and
+/// SC-internal transfers cannot be derived without re-execution and are
+/// left for a peer whose node had the stream (see `pull_parts`).
+/// `transfers_stored` stays `false` on such slots so a real list can
+/// still replace the reconstruction later.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ReconstructTransfers {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Inclusive lower bound.
+    #[serde(default)]
+    pub from_period: u64,
+    /// Inclusive upper bound; `0` = the FINAL head at startup.
+    #[serde(default)]
+    pub to_period: u64,
+}
+
+/// `[repair.pull_parts]` — pull the selected parts for every FINAL slot
+/// in `[from_period, to_period]` that lacks them locally, from peers, via
+/// bulk `StreamFinalSlots`. A single descending pass; slots no peer can
+/// supply are left as they are (no perpetual retry).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PullParts {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub from_period: u64,
+    /// Inclusive upper bound; `0` = the FINAL head at startup.
+    #[serde(default)]
+    pub to_period: u64,
+    #[serde(default)]
+    pub block: bool,
+    #[serde(default)]
+    pub exec_output: bool,
+    #[serde(default)]
+    pub transfers: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +159,16 @@ pub struct Peer {
     /// at full RocksDB iteration speed. Defaults to 50 ms.
     #[serde(default = "default_scan_interval_ms")]
     pub scan_interval_ms: u64,
+    /// A `Candidate` slot this many periods behind the FINAL head is
+    /// considered stale (the node stream will never finalise it after a
+    /// restart) and is fetched from peers. Default 64 (~17 min).
+    #[serde(default = "default_stale_candidate_periods")]
+    pub stale_candidate_periods: u64,
+    /// FINAL slots with a body but missing exec / transfers parts are
+    /// re-asked from peers only while at most this many periods behind
+    /// the head. Default 1350 (~6 h).
+    #[serde(default = "default_recent_incomplete_periods")]
+    pub recent_incomplete_periods: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,6 +185,8 @@ impl Default for Peer {
             advertise_url: String::new(),
             peers: Default::default(),
             scan_interval_ms: default_scan_interval_ms(),
+            stale_candidate_periods: default_stale_candidate_periods(),
+            recent_incomplete_periods: default_recent_incomplete_periods(),
         }
     }
 }
@@ -117,6 +194,8 @@ impl Default for Peer {
 fn default_peer_enabled() -> bool { true }
 fn default_peer_bind() -> String { "127.0.0.1:9443".into() }
 fn default_scan_interval_ms() -> u64 { 50 }
+fn default_stale_candidate_periods() -> u64 { 64 }
+fn default_recent_incomplete_periods() -> u64 { 1_350 }
 
 /// Legacy block-storer (DynamoDB) **one-shot importer** configuration.
 ///
@@ -425,6 +504,35 @@ impl Config {
                 "rest.max_page_size must be <= {HARD_MAX_PAGE_SIZE}"
             )));
         }
+        if self.peer.stale_candidate_periods < 8 {
+            return Err(Error::Config(
+                "peer.stale_candidate_periods must be >= 8 (live candidates finalise within a few periods)".into(),
+            ));
+        }
+        for (lo, hi) in &self.repair.recheck_periods {
+            if lo > hi {
+                return Err(Error::Config(format!(
+                    "repair.recheck_periods: range [{lo}, {hi}] has lo > hi"
+                )));
+            }
+        }
+        let rt = &self.repair.reconstruct_transfers;
+        if rt.enabled && rt.to_period != 0 && rt.from_period > rt.to_period {
+            return Err(Error::Config(
+                "repair.reconstruct_transfers: from_period > to_period".into(),
+            ));
+        }
+        let pp = &self.repair.pull_parts;
+        if pp.enabled {
+            if pp.to_period != 0 && pp.from_period > pp.to_period {
+                return Err(Error::Config("repair.pull_parts: from_period > to_period".into()));
+            }
+            if !(pp.block || pp.exec_output || pp.transfers) {
+                return Err(Error::Config(
+                    "repair.pull_parts: select at least one of block / exec_output / transfers".into(),
+                ));
+            }
+        }
         if self.legacy_ddb.enabled {
             if self.legacy_ddb.access_key_id.trim().is_empty() {
                 return Err(Error::Config(
@@ -562,6 +670,89 @@ path = "/tmp/ix"
         clear_env();
         assert_eq!(c.rest.bind, "127.0.0.1:9999");
         assert!(!c.streams.transfers);
+    }
+
+    #[test]
+    fn repair_section_parses_and_validates() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_env();
+        let f = write_tmp(r#"
+[general]
+network = "mainnet"
+[node]
+grpc_url = "http://127.0.0.1:33037"
+[db]
+path = "/tmp/ix"
+[rest]
+
+[peer]
+stale_candidate_periods = 100
+
+[repair]
+recheck_periods = [[4608110, 4608120], [10, 12]]
+
+[repair.reconstruct_transfers]
+enabled = true
+from_period = 4608114
+
+[repair.pull_parts]
+enabled = true
+from_period = 5000000
+to_period = 5000100
+transfers = true
+"#);
+        let c = Config::load(f.path()).unwrap();
+        assert_eq!(c.peer.stale_candidate_periods, 100);
+        assert_eq!(c.peer.recent_incomplete_periods, 1_350);
+        assert_eq!(c.repair.recheck_periods, vec![(4_608_110, 4_608_120), (10, 12)]);
+        assert!(c.repair.reconstruct_transfers.enabled);
+        assert_eq!(c.repair.reconstruct_transfers.from_period, 4_608_114);
+        assert_eq!(c.repair.reconstruct_transfers.to_period, 0);
+        assert!(c.repair.pull_parts.enabled && c.repair.pull_parts.transfers);
+
+        // Defaults when the section is absent.
+        let f2 = write_tmp(r#"
+[general]
+network = "mainnet"
+[node]
+grpc_url = "http://127.0.0.1:33037"
+[db]
+path = "/tmp/ix"
+[rest]
+"#);
+        let c2 = Config::load(f2.path()).unwrap();
+        assert!(c2.repair.recheck_periods.is_empty());
+        assert!(!c2.repair.reconstruct_transfers.enabled);
+        assert!(!c2.repair.pull_parts.enabled);
+        assert_eq!(c2.peer.stale_candidate_periods, 64);
+
+        // Rejects inverted ranges and empty part masks.
+        let bad = write_tmp(r#"
+[general]
+network = "mainnet"
+[node]
+grpc_url = "http://127.0.0.1:33037"
+[db]
+path = "/tmp/ix"
+[rest]
+[repair]
+recheck_periods = [[20, 10]]
+"#);
+        assert!(Config::load(bad.path()).is_err());
+        let bad2 = write_tmp(r#"
+[general]
+network = "mainnet"
+[node]
+grpc_url = "http://127.0.0.1:33037"
+[db]
+path = "/tmp/ix"
+[rest]
+[repair.pull_parts]
+enabled = true
+from_period = 1
+to_period = 2
+"#);
+        assert!(Config::load(bad2.path()).is_err());
     }
 
     #[test]

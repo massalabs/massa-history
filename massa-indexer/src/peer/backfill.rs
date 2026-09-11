@@ -139,6 +139,28 @@ pub struct BackfillConfig {
     /// home link's capacity avoids bufferbloat that would delay health
     /// RPCs and other peer traffic sharing the same path.
     pub apply_bandwidth: u64,
+
+    /// A `Candidate` row this many periods (or more) behind the local
+    /// FINAL head is *stale*: the node stream will never finalise it
+    /// (broadcast streams do not replay across an indexer or node
+    /// restart), so peers are asked for the FINAL verdict. Massa
+    /// finality lands within a couple of periods; 64 periods (~17 min)
+    /// leaves a wide margin so live candidates are never touched.
+    pub stale_candidate_periods: u64,
+
+    /// A FINAL slot with a body but a missing exec / transfers part is
+    /// re-asked only while it is at most this many periods behind the
+    /// head. Bounds the per-sweep cost (deep history is settled by
+    /// `[repair]` ranges instead) while still healing the boundary
+    /// slots a restart or a lagging stream leaves behind.
+    pub recent_incomplete_periods: u64,
+
+    /// Operator-supplied inclusive period ranges whose FINAL slots are
+    /// re-queried once (first sweep after startup) regardless of local
+    /// completeness, so peers can present a competing verdict and the
+    /// chain-linkage arbiter in `apply_peer_patch` can settle
+    /// divergences. Cheap: intended for a handful of periods.
+    pub recheck_ranges: Vec<(u64, u64)>,
 }
 
 impl Default for BackfillConfig {
@@ -159,7 +181,28 @@ impl Default for BackfillConfig {
             range_sparse_threshold: 24,
             apply_pause: Duration::from_millis(2),
             apply_bandwidth: 2_000_000,
+            stale_candidate_periods: 64,
+            recent_incomplete_periods: 1_350,
+            recheck_ranges: Vec::new(),
         }
+    }
+}
+
+/// Per-sweep view the fetch predicate needs: where the local FINAL head
+/// is and whether operator recheck ranges are still armed.
+#[derive(Debug, Clone, Copy)]
+pub struct SweepCtx<'a> {
+    /// `last_final_slot.period` at the start of the sweep.
+    pub head: u64,
+    /// Ranges to force-requery on this sweep (empty once consumed).
+    pub recheck_ranges: &'a [(u64, u64)],
+}
+
+impl<'a> SweepCtx<'a> {
+    fn in_recheck(&self, period: u64) -> bool {
+        self.recheck_ranges
+            .iter()
+            .any(|(lo, hi)| period >= *lo && period <= *hi)
     }
 }
 
@@ -181,8 +224,16 @@ pub async fn run_backfill(
         rate_limit_ms = cfg.rate_limit.as_millis() as u64,
         wrap_pause_s = cfg.wrap_pause.as_secs(),
         thread_count = cfg.thread_count,
+        stale_candidate_periods = cfg.stale_candidate_periods,
+        recent_incomplete_periods = cfg.recent_incomplete_periods,
+        recheck_ranges = ?cfg.recheck_ranges,
         "unified backfill worker starting"
     );
+
+    // Recheck ranges are consumed by the first *completed* sweep so a
+    // handful of operator-listed periods are re-offered to peers exactly
+    // once per process start.
+    let mut recheck_ranges: Vec<(u64, u64)> = cfg.recheck_ranges.clone();
 
     loop {
         if tx.is_closed() {
@@ -217,6 +268,10 @@ pub async fn run_backfill(
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
         debug!(head, "backfill: new sweep");
+        let sweep = SweepCtx {
+            head,
+            recheck_ranges: &recheck_ranges,
+        };
 
         let mut period = head;
         loop {
@@ -239,9 +294,12 @@ pub async fn run_backfill(
                 for thread in 0..cfg.thread_count {
                     match db.read_slot(p, thread) {
                         Ok(row) => {
-                            if needs_fetch(row.as_ref(), &cfg.expected_streams, &cfg.parts)
-                                .is_some()
+                            if let Some(reason) =
+                                needs_fetch(row.as_ref(), &cfg, &sweep).map(|(_, r)| r)
                             {
+                                if let Some(m) = &metrics {
+                                    reason.count(m);
+                                }
                                 needy.push((p, thread));
                             }
                         }
@@ -276,7 +334,9 @@ pub async fn run_backfill(
                 // range at all) are skipped — the next sweep retries.
                 if !needy.is_empty() && needy.len() < cfg.range_sparse_threshold {
                     for (p, t) in std::mem::take(&mut needy) {
-                        if !visit_slot(&db, &pool, &tx, &cfg, metrics.as_ref(), p, t).await {
+                        if !visit_slot(&db, &pool, &tx, &cfg, &sweep, metrics.as_ref(), p, t)
+                            .await
+                        {
                             // visit_slot returned false → channel closed
                             return;
                         }
@@ -290,6 +350,13 @@ pub async fn run_backfill(
             period = win_lo - 1;
         }
 
+        if !recheck_ranges.is_empty() {
+            info!(
+                ranges = ?recheck_ranges,
+                "backfill: recheck ranges re-offered to peers once; disarming"
+            );
+            recheck_ranges.clear();
+        }
         debug!("backfill: reached (0,0), pausing before next sweep");
         sleep(cfg.wrap_pause).await;
     }
@@ -305,7 +372,7 @@ pub async fn run_backfill(
 ///
 /// Returns `false` only if the ingest channel closed (caller bails out).
 /// Slots remaining in `needy` afterwards were not supplied by any peer.
-async fn range_fill_window(
+pub(crate) async fn range_fill_window(
     pool: &PeerPool,
     tx: &EventTx,
     cfg: &BackfillConfig,
@@ -417,6 +484,7 @@ async fn visit_slot(
     pool: &PeerPool,
     tx: &EventTx,
     cfg: &BackfillConfig,
+    sweep: &SweepCtx<'_>,
     metrics: Option<&Arc<Metrics>>,
     period: u64,
     thread: u8,
@@ -429,8 +497,8 @@ async fn visit_slot(
         }
     };
 
-    let needed = match needs_fetch(row.as_ref(), &cfg.expected_streams, &cfg.parts) {
-        Some(p) => p,
+    let needed = match needs_fetch(row.as_ref(), cfg, sweep) {
+        Some((p, _reason)) => p,
         None => return true, // skip — complete or speculative
     };
 
@@ -467,81 +535,129 @@ async fn visit_slot(
     true
 }
 
+/// Why the walker decided to ask peers for a slot. Surfaced as metrics so
+/// operators can see restart holes and divergences being healed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FetchReason {
+    /// No row / `Unknown` stub / FINAL without body: a plain gap.
+    Gap,
+    /// `Candidate` row far behind the FINAL head — the live stream will
+    /// never finalise it (restart hole).
+    StaleCandidate,
+    /// FINAL miss although a block body was seen for the slot: the
+    /// verdict deserves a second opinion from peers.
+    SuspiciousMiss,
+    /// Recent FINAL slot with body but missing exec / transfers parts.
+    RecentIncomplete,
+    /// Operator recheck range.
+    Recheck,
+}
+
+impl FetchReason {
+    fn count(self, m: &Metrics) {
+        use std::sync::atomic::Ordering::Relaxed;
+        match self {
+            FetchReason::Gap => {}
+            FetchReason::StaleCandidate => {
+                m.backfill_stale_candidates_total.fetch_add(1, Relaxed);
+            }
+            FetchReason::SuspiciousMiss => {
+                m.backfill_suspicious_misses_total.fetch_add(1, Relaxed);
+            }
+            FetchReason::RecentIncomplete => {
+                m.backfill_recent_incomplete_total.fetch_add(1, Relaxed);
+            }
+            FetchReason::Recheck => {
+                m.backfill_recheck_total.fetch_add(1, Relaxed);
+            }
+        }
+    }
+}
+
+/// Everything the operator has enabled, intersected with what peers can
+/// be asked for.
+fn all_enabled(enabled: &StreamsExpected, requestable: &FinalSlotParts) -> Option<FinalSlotParts> {
+    let parts = FinalSlotParts {
+        block: enabled.filled_blocks && requestable.block,
+        exec_output: enabled.slot_execution_outputs && requestable.exec_output,
+        transfers: enabled.transfers && requestable.transfers,
+    };
+    if parts.block || parts.exec_output || parts.transfers {
+        Some(parts)
+    } else {
+        None
+    }
+}
+
 /// Decide whether `(period, thread)` needs an RPC issued to peers.
 ///
-/// Returns `Some(parts_mask)` describing what to ask for, or `None` to
-/// signal "skip this slot".
+/// Returns `Some((parts_mask, reason))` describing what to ask for, or
+/// `None` to signal "skip this slot".
 ///
-/// Strict cases:
+/// Cases:
 /// - `None` row OR `Unknown` parent-gap stub → ask for everything the
 ///   operator has enabled.
-/// - `Final` row missing some enabled parts → ask only for the
-///   missing ones.
-/// - `Final` row complete-for-enabled-streams → skip (cheapest path,
-///   single bool conjunction).
-/// - `Candidate` row → skip; the live stream is still settling it.
+/// - `Candidate` row → skip while it is fresh (the live stream owns it),
+///   ask for everything once it is `stale_candidate_periods` behind the
+///   FINAL head: node broadcast streams do not replay across a restart,
+///   so a candidate that old will never be finalised locally.
+/// - `Final` row without body (and not a miss) → ask for everything.
+/// - `Final` miss that nevertheless has candidate block ids → ask for
+///   everything so peers can contest the verdict (chain-linkage arbiter).
+/// - `Final` row with body but missing exec / transfers → ask only for
+///   the missing parts while the slot is within
+///   `recent_incomplete_periods` of the head. Deep history is *not*
+///   re-asked every sweep (that is what made earlier walkers never reach
+///   genesis); `[repair]` ranges cover it explicitly.
+/// - `Final` row inside an operator recheck range → ask for everything.
+/// - otherwise → skip.
 fn needs_fetch(
     row: Option<&SlotState>,
-    enabled: &StreamsExpected,
-    requestable: &FinalSlotParts,
-) -> Option<FinalSlotParts> {
+    cfg: &BackfillConfig,
+    sweep: &SweepCtx<'_>,
+) -> Option<(FinalSlotParts, FetchReason)> {
+    let enabled = &cfg.expected_streams;
+    let requestable = &cfg.parts;
     let Some(s) = row else {
-        // Genuine gap. Ask for everything enabled.
-        let parts = FinalSlotParts {
-            block: enabled.filled_blocks && requestable.block,
-            exec_output: enabled.slot_execution_outputs && requestable.exec_output,
-            transfers: enabled.transfers && requestable.transfers,
-        };
-        return if parts.block || parts.exec_output || parts.transfers {
-            Some(parts)
-        } else {
-            None
-        };
+        return all_enabled(enabled, requestable).map(|p| (p, FetchReason::Gap));
     };
+    let age = sweep.head.saturating_sub(s.slot.period);
 
     match s.status {
-        SlotStatus::Unknown => {
-            // Parent-gap stub — same treatment as a genuine gap.
-            let parts = FinalSlotParts {
-                block: enabled.filled_blocks && requestable.block,
-                exec_output: enabled.slot_execution_outputs && requestable.exec_output,
-                transfers: enabled.transfers && requestable.transfers,
-            };
-            if parts.block || parts.exec_output || parts.transfers {
-                Some(parts)
+        SlotStatus::Unknown => all_enabled(enabled, requestable).map(|p| (p, FetchReason::Gap)),
+        SlotStatus::Candidate => {
+            if age >= cfg.stale_candidate_periods {
+                all_enabled(enabled, requestable).map(|p| (p, FetchReason::StaleCandidate))
             } else {
                 None
             }
         }
         SlotStatus::Final => {
             let c = s.completeness;
-            // Structural completeness for the genesis walker: once a FINAL
-            // slot has its block body (or is a miss), stop re-querying peers
-            // for exec/transfers on every sweep.
-            //
-            // Why: legacy imports and peer patches leave
-            // `transfers_stored` / `exec_output_final` false when those
-            // lists are empty (see `apply_legacy_patch`). Asking peers
-            // again does not flip the flags — the peer returns the same
-            // empty lists — so the walker was burning ~50 ms × tens of
-            // millions of already-bodied slots per sweep and never
-            // reaching genesis. Live ingest still fills exec/transfers
-            // for recent slots as they arrive from the node.
-            if c.block_body_stored || s.is_miss {
-                return None;
+            if sweep.in_recheck(s.slot.period) {
+                return all_enabled(enabled, requestable).map(|p| (p, FetchReason::Recheck));
             }
-            let block = enabled.filled_blocks && requestable.block;
-            if block {
-                Some(FinalSlotParts {
-                    block: true,
-                    exec_output: enabled.slot_execution_outputs && requestable.exec_output,
-                    transfers: enabled.transfers && requestable.transfers,
-                })
-            } else {
-                None
+            if !s.is_miss && !c.block_body_stored {
+                return all_enabled(enabled, requestable).map(|p| (p, FetchReason::Gap));
             }
+            if s.is_miss && !s.candidate_block_ids.is_empty() {
+                return all_enabled(enabled, requestable)
+                    .map(|p| (p, FetchReason::SuspiciousMiss));
+            }
+            if age <= cfg.recent_incomplete_periods {
+                let parts = FinalSlotParts {
+                    block: false,
+                    exec_output: enabled.slot_execution_outputs
+                        && requestable.exec_output
+                        && !c.exec_output_final,
+                    transfers: enabled.transfers && requestable.transfers && !c.transfers_stored,
+                };
+                if parts.exec_output || parts.transfers {
+                    return Some((parts, FetchReason::RecentIncomplete));
+                }
+            }
+            None
         }
-        SlotStatus::Candidate => None,
     }
 }
 
@@ -555,24 +671,48 @@ mod tests {
     use super::*;
     use crate::model::{Slot, SlotCompleteness, SlotState, SlotStatus};
 
-    fn all_parts() -> FinalSlotParts {
-        FinalSlotParts {
-            block: true,
-            exec_output: true,
-            transfers: true,
+    /// Deep-history sweep context: head far above every test slot, no
+    /// recheck ranges armed.
+    const DEEP_HEAD: u64 = 1_000_000;
+    fn deep() -> SweepCtx<'static> {
+        SweepCtx {
+            head: DEEP_HEAD,
+            recheck_ranges: &[],
         }
+    }
+    fn at_head(head: u64) -> SweepCtx<'static> {
+        SweepCtx {
+            head,
+            recheck_ranges: &[],
+        }
+    }
+    fn cfg() -> BackfillConfig {
+        BackfillConfig::default()
+    }
+    fn cfg_with(enabled: StreamsExpected) -> BackfillConfig {
+        BackfillConfig {
+            expected_streams: enabled,
+            ..BackfillConfig::default()
+        }
+    }
+    fn fetch(row: Option<&SlotState>, cfg: &BackfillConfig, sweep: &SweepCtx<'_>) -> Option<FinalSlotParts> {
+        needs_fetch(row, cfg, sweep).map(|(p, _)| p)
+    }
+    fn reason(row: Option<&SlotState>, cfg: &BackfillConfig, sweep: &SweepCtx<'_>) -> Option<FetchReason> {
+        needs_fetch(row, cfg, sweep).map(|(_, r)| r)
     }
 
     #[test]
     fn no_row_at_all_requests_everything() {
-        let m = needs_fetch(None, &StreamsExpected::all(), &all_parts()).unwrap();
+        let m = fetch(None, &cfg(), &deep()).unwrap();
         assert!(m.block && m.exec_output && m.transfers);
+        assert_eq!(reason(None, &cfg(), &deep()), Some(FetchReason::Gap));
     }
 
     #[test]
     fn unknown_stub_requests_everything() {
         let s = SlotState::fresh(Slot::new(1, 0), 0);
-        let m = needs_fetch(Some(&s), &StreamsExpected::all(), &all_parts()).unwrap();
+        let m = fetch(Some(&s), &cfg(), &deep()).unwrap();
         assert!(m.block && m.exec_output && m.transfers);
     }
 
@@ -586,15 +726,17 @@ mod tests {
             exec_output_candidate: true,
             transfers_stored: true,
         };
-        assert!(needs_fetch(Some(&s), &StreamsExpected::all(), &all_parts()).is_none());
+        assert!(fetch(Some(&s), &cfg(), &deep()).is_none());
+        // …also when it sits right at the head.
+        assert!(fetch(Some(&s), &cfg(), &at_head(1)).is_none());
     }
 
     #[test]
     fn final_miss_skipped_when_block_body_marked() {
         // A miss slot has block_body_stored=true (vacuously) and is_miss=true.
-        // Even if exec/transfers flags are still false, the walker must
-        // not re-query — empty peer replies would never flip those flags
-        // and would wedge genesis catch-up.
+        // Even if exec/transfers flags are still false, the deep walker
+        // must not re-query — empty peer replies would never flip those
+        // flags and would wedge genesis catch-up.
         let mut s = SlotState::fresh(Slot::new(1, 0), 0);
         s.status = SlotStatus::Final;
         s.is_miss = true;
@@ -603,14 +745,11 @@ mod tests {
             exec_output_final: false,
             ..Default::default()
         };
-        assert!(needs_fetch(Some(&s), &StreamsExpected::all(), &all_parts()).is_none());
+        assert!(fetch(Some(&s), &cfg(), &deep()).is_none());
     }
 
     #[test]
     fn final_miss_fully_settled_is_skipped() {
-        // Once a peer ships exec_output and transfers, the miss is
-        // fully covered and the worker must walk past it on every
-        // subsequent sweep — no perpetual retries.
         let mut s = SlotState::fresh(Slot::new(1, 0), 0);
         s.status = SlotStatus::Final;
         s.is_miss = true;
@@ -620,14 +759,59 @@ mod tests {
             transfers_stored: true,
             ..Default::default()
         };
-        assert!(needs_fetch(Some(&s), &StreamsExpected::all(), &all_parts()).is_none());
+        assert!(fetch(Some(&s), &cfg(), &deep()).is_none());
+        assert!(fetch(Some(&s), &cfg(), &at_head(1)).is_none());
+    }
+
+    /// A miss verdict for a slot where we *saw* a block body is contested:
+    /// peers get to present their FINAL block so the linkage arbiter in
+    /// `apply_peer_patch` can settle it.
+    #[test]
+    fn final_miss_with_candidate_block_is_suspicious() {
+        let mut s = SlotState::fresh(Slot::new(1, 0), 0);
+        s.status = SlotStatus::Final;
+        s.is_miss = true;
+        s.candidate_block_ids = vec![crate::ids::mk_test_block_id(9)];
+        s.completeness = SlotCompleteness {
+            block_body_stored: true,
+            exec_output_final: true,
+            transfers_stored: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            reason(Some(&s), &cfg(), &deep()),
+            Some(FetchReason::SuspiciousMiss)
+        );
+        let m = fetch(Some(&s), &cfg(), &deep()).unwrap();
+        assert!(m.block && m.exec_output && m.transfers);
     }
 
     #[test]
-    fn candidate_slot_skipped() {
-        let mut s = SlotState::fresh(Slot::new(1, 0), 0);
+    fn fresh_candidate_slot_skipped() {
+        let mut s = SlotState::fresh(Slot::new(100, 0), 0);
         s.status = SlotStatus::Candidate;
-        assert!(needs_fetch(Some(&s), &StreamsExpected::all(), &all_parts()).is_none());
+        // 3 periods behind the head: the live stream still owns it.
+        assert!(fetch(Some(&s), &cfg(), &at_head(103)).is_none());
+        // Exactly one period below the stale threshold: still skipped.
+        let c = cfg();
+        assert!(fetch(Some(&s), &c, &at_head(100 + c.stale_candidate_periods - 1)).is_none());
+    }
+
+    /// The restart hole: a Candidate row the node will never finalise
+    /// (broadcast streams do not replay) must be handed to peers once it
+    /// is unambiguously stale.
+    #[test]
+    fn stale_candidate_requests_everything() {
+        let mut s = SlotState::fresh(Slot::new(100, 0), 0);
+        s.status = SlotStatus::Candidate;
+        s.completeness.block_body_stored = true;
+        let c = cfg();
+        let sweep = at_head(100 + c.stale_candidate_periods);
+        assert_eq!(reason(Some(&s), &c, &sweep), Some(FetchReason::StaleCandidate));
+        let m = fetch(Some(&s), &c, &sweep).unwrap();
+        assert!(m.block && m.exec_output && m.transfers);
+        // Deep history candidates are stale too.
+        assert_eq!(reason(Some(&s), &c, &deep()), Some(FetchReason::StaleCandidate));
     }
 
     /// With transfers disabled in `[streams]`, a slot that's complete
@@ -647,13 +831,16 @@ mod tests {
             slot_execution_outputs: true,
             transfers: false,
         };
-        assert!(needs_fetch(Some(&s), &enabled, &all_parts()).is_none());
+        let c = cfg_with(enabled);
+        assert!(fetch(Some(&s), &c, &deep()).is_none());
+        assert!(fetch(Some(&s), &c, &at_head(1)).is_none());
     }
 
     #[test]
-    fn final_with_body_skips_even_if_transfers_flag_false() {
+    fn deep_final_with_body_skips_even_if_transfers_flag_false() {
         // Regression: perpetual transfer re-fetch on bodied FINAL slots
-        // prevented indexer2 from walking below ~period 3.4M.
+        // prevented indexer2 from walking below ~period 3.4M. Deep
+        // history is never re-asked on the regular sweep.
         let mut s = SlotState::fresh(Slot::new(1, 0), 0);
         s.status = SlotStatus::Final;
         s.completeness = SlotCompleteness {
@@ -662,7 +849,33 @@ mod tests {
             transfers_stored: false,
             ..Default::default()
         };
-        assert!(needs_fetch(Some(&s), &StreamsExpected::all(), &all_parts()).is_none());
+        assert!(fetch(Some(&s), &cfg(), &deep()).is_none());
+    }
+
+    /// Near the head, a bodied FINAL slot missing exec / transfers is
+    /// re-asked for exactly the missing parts (no block re-download).
+    #[test]
+    fn recent_final_missing_parts_requests_only_those_parts() {
+        let mut s = SlotState::fresh(Slot::new(500, 0), 0);
+        s.status = SlotStatus::Final;
+        s.completeness = SlotCompleteness {
+            block_body_stored: true,
+            exec_output_final: true,
+            transfers_stored: false,
+            ..Default::default()
+        };
+        let c = cfg();
+        let sweep = at_head(500 + c.recent_incomplete_periods);
+        assert_eq!(reason(Some(&s), &c, &sweep), Some(FetchReason::RecentIncomplete));
+        let m = fetch(Some(&s), &c, &sweep).unwrap();
+        assert!(!m.block && !m.exec_output && m.transfers);
+
+        s.completeness.exec_output_final = false;
+        let m = fetch(Some(&s), &c, &sweep).unwrap();
+        assert!(!m.block && m.exec_output && m.transfers);
+
+        // One period older than the window → aged out, not re-asked.
+        assert!(fetch(Some(&s), &c, &at_head(500 + c.recent_incomplete_periods + 1)).is_none());
     }
 
     #[test]
@@ -673,10 +886,38 @@ mod tests {
             block_body_stored: false,
             ..Default::default()
         };
-        let m = needs_fetch(Some(&s), &StreamsExpected::all(), &all_parts()).unwrap();
+        let m = fetch(Some(&s), &cfg(), &deep()).unwrap();
         assert!(m.block);
         assert!(m.exec_output);
         assert!(m.transfers);
+    }
+
+    /// Operator recheck ranges force one full re-query of complete FINAL
+    /// slots so a peer can present a competing verdict.
+    #[test]
+    fn recheck_range_forces_full_refetch_of_complete_slot() {
+        let mut s = SlotState::fresh(Slot::new(4_608_113, 3), 0);
+        s.status = SlotStatus::Final;
+        s.completeness = SlotCompleteness {
+            block_body_stored: true,
+            exec_output_final: true,
+            transfers_stored: true,
+            ..Default::default()
+        };
+        let ranges = [(4_608_110u64, 4_608_120u64)];
+        let sweep = SweepCtx {
+            head: DEEP_HEAD,
+            recheck_ranges: &ranges,
+        };
+        assert_eq!(reason(Some(&s), &cfg(), &sweep), Some(FetchReason::Recheck));
+        let m = fetch(Some(&s), &cfg(), &sweep).unwrap();
+        assert!(m.block && m.exec_output && m.transfers);
+        // Outside the range: business as usual.
+        s.slot = Slot::new(4_608_121, 3);
+        assert!(fetch(Some(&s), &cfg(), &sweep).is_none());
+        // Disarmed context: skipped again.
+        s.slot = Slot::new(4_608_113, 3);
+        assert!(fetch(Some(&s), &cfg(), &deep()).is_none());
     }
 
     // -----------------------------------------------------------------------
@@ -772,7 +1013,7 @@ mod tests {
         );
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Event>(8);
         let cfg = fast_cfg();
-        let cont = visit_slot(&db, &pool, &tx, &cfg, None, 1, 0).await;
+        let cont = visit_slot(&db, &pool, &tx, &cfg, &deep(), None, 1, 0).await;
         assert!(cont, "channel still open");
         assert!(rx.try_recv().is_err(), "no event emitted for complete slot");
     }
@@ -794,7 +1035,7 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Event>(8);
         let cfg = fast_cfg();
         // Slot doesn't exist at all in the DB.
-        let cont = visit_slot(&db, &pool, &tx, &cfg, None, 42, 1).await;
+        let cont = visit_slot(&db, &pool, &tx, &cfg, &deep(), None, 42, 1).await;
         assert!(cont);
         assert!(rx.try_recv().is_err(), "no source available → no patch");
         // Crucially: the slot is STILL absent, so the next sweep retries.

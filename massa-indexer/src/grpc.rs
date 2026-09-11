@@ -10,6 +10,7 @@ use crate::{
     ingest::{
         filled_blocks_request, slot_exec_request, transfers_info_request, Event, EventTx,
     },
+    metrics::{Metrics, StreamKind, StreamState},
     proto::massa::api::v1::{
         public_service_client::PublicServiceClient, GetStatusRequest,
         NewFilledBlocksServerResponse, NewSlotExecutionOutputsServerResponse,
@@ -17,10 +18,60 @@ use crate::{
     },
     Result,
 };
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tonic::transport::{Channel, Endpoint};
 use tracing::{debug, info, warn};
+
+/// How often an `Unimplemented` stream is re-reported at WARN level. The
+/// first version of this loop warned exactly once per reconnect, which
+/// let a node built without `execution-info` go unnoticed for months.
+const UNIMPLEMENTED_REWARN: Duration = Duration::from_secs(300);
+
+/// Per-stream health reporter. All methods are no-ops when metrics are not
+/// wired (unit tests construct consumers without them).
+#[derive(Clone)]
+struct StreamReporter {
+    kind: StreamKind,
+    metrics: Option<Arc<Metrics>>,
+}
+
+impl StreamReporter {
+    fn new(kind: StreamKind, metrics: Option<Arc<Metrics>>) -> Self {
+        if let Some(m) = &metrics {
+            m.stream_set_enabled(kind, true);
+        }
+        Self { kind, metrics }
+    }
+    fn state(&self, s: StreamState) {
+        if let Some(m) = &self.metrics {
+            m.stream_set_state(self.kind, s);
+        }
+    }
+    fn event(&self) {
+        if let Some(m) = &self.metrics {
+            m.stream_event(self.kind, wall_ms());
+        }
+    }
+    /// Classify an RPC failure: `Unimplemented` is a node-build fault the
+    /// operator must fix; anything else is a transport hiccup.
+    fn rpc_failed(&self, status: &tonic::Status) {
+        if status.code() == tonic::Code::Unimplemented {
+            self.state(StreamState::Unimplemented);
+        } else {
+            self.state(StreamState::Reconnecting);
+        }
+    }
+}
+
+fn wall_ms() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
 
 /// Node-reported chain configuration snapshot used to stamp `MetaRow` so the
 /// frontend can convert slots ↔ timestamps deterministically.
@@ -572,13 +623,20 @@ fn decode_sc_string(bytes: &[u8]) -> Option<String> {
 
 /// Spawn one consumer per enabled stream. The returned future resolves when
 /// every spawned consumer exits (in practice, on shutdown).
-pub async fn run_consumers(url: String, connect_timeout_ms: u64, tx: EventTx, streams: Streams) {
+pub async fn run_consumers(
+    url: String,
+    connect_timeout_ms: u64,
+    tx: EventTx,
+    streams: Streams,
+    metrics: Option<Arc<Metrics>>,
+) {
     let mut handles = Vec::new();
     if streams.filled_blocks {
         handles.push(tokio::spawn(filled_blocks_loop(
             url.clone(),
             connect_timeout_ms,
             tx.clone(),
+            StreamReporter::new(StreamKind::Blocks, metrics.clone()),
         )));
     } else {
         info!(stream = "blocks", "disabled via config");
@@ -588,6 +646,7 @@ pub async fn run_consumers(url: String, connect_timeout_ms: u64, tx: EventTx, st
             url.clone(),
             connect_timeout_ms,
             tx.clone(),
+            StreamReporter::new(StreamKind::Exec, metrics.clone()),
         )));
     } else {
         info!(stream = "exec", "disabled via config");
@@ -597,6 +656,7 @@ pub async fn run_consumers(url: String, connect_timeout_ms: u64, tx: EventTx, st
             url,
             connect_timeout_ms,
             tx,
+            StreamReporter::new(StreamKind::Transfers, metrics),
         )));
     } else {
         info!(stream = "transfers", "disabled via config");
@@ -606,12 +666,13 @@ pub async fn run_consumers(url: String, connect_timeout_ms: u64, tx: EventTx, st
     }
 }
 
-async fn filled_blocks_loop(url: String, connect_timeout_ms: u64, tx: EventTx) {
+async fn filled_blocks_loop(url: String, connect_timeout_ms: u64, tx: EventTx, rep: StreamReporter) {
     let mut backoff = BACKOFF_MIN;
     loop {
         match connect_endpoint(&url, connect_timeout_ms).await {
             Err(e) => {
                 warn!(stream = "blocks", ?e, "connect failed");
+                rep.state(StreamState::Reconnecting);
                 sleep(backoff).await;
                 backoff = bump_backoff(backoff);
                 continue;
@@ -623,6 +684,7 @@ async fn filled_blocks_loop(url: String, connect_timeout_ms: u64, tx: EventTx) {
                 match client.new_filled_blocks_server(filled_blocks_request()).await {
                     Err(e) => {
                         warn!(stream = "blocks", ?e, "rpc failed");
+                        rep.rpc_failed(&e);
                         sleep(backoff).await;
                         backoff = bump_backoff(backoff);
                         continue;
@@ -632,6 +694,7 @@ async fn filled_blocks_loop(url: String, connect_timeout_ms: u64, tx: EventTx) {
                         loop {
                             match stream.message().await {
                                 Ok(Some(NewFilledBlocksServerResponse { filled_block: Some(fb) })) => {
+                                    rep.event();
                                     if tx.send(Event::Block(Box::new(fb))).await.is_err() {
                                         info!("ingest channel closed; stopping blocks stream");
                                         return;
@@ -650,6 +713,7 @@ async fn filled_blocks_loop(url: String, connect_timeout_ms: u64, tx: EventTx) {
                                 }
                             }
                         }
+                        rep.state(StreamState::Reconnecting);
                     }
                 }
             }
@@ -663,23 +727,28 @@ async fn filled_blocks_loop(url: String, connect_timeout_ms: u64, tx: EventTx) {
 /// ingest worker. The RPC is a plain unary-to-streaming call: one request in,
 /// many responses out (see `massa-grpc/src/stream/new_transfers_info.rs`).
 ///
-/// Requires the node to be started with the `execution-info` feature. If the
-/// feature is disabled we reduce logging to a single WARN per RPC failure and
-/// let the backoff grow to the 30 s cap.
-async fn transfers_info_loop(url: String, connect_timeout_ms: u64, tx: EventTx) {
+/// Requires the node to be started with the `execution-info` feature. When
+/// the node answers `Unimplemented` the stream is flagged in `/v1/health`
+/// and `/v1/metrics` (`stream_state = unimplemented`) and the WARN is
+/// repeated every [`UNIMPLEMENTED_REWARN`] — no amount of retrying fixes a
+/// node built without the feature, and silence here cost four months of
+/// transfers once.
+async fn transfers_info_loop(url: String, connect_timeout_ms: u64, tx: EventTx, rep: StreamReporter) {
     let mut backoff = BACKOFF_MIN;
-    let mut warned_unsupported = false;
+    let mut unsupported_since: Option<Instant> = None;
+    let mut last_unsupported_warn: Option<Instant> = None;
     let mut connected_once = false;
     loop {
         match connect_endpoint(&url, connect_timeout_ms).await {
             Err(e) => {
                 warn!(stream = "transfers", ?e, "connect failed");
+                rep.state(StreamState::Reconnecting);
                 sleep(backoff).await;
                 backoff = bump_backoff(backoff);
                 continue;
             }
             Ok(ch) => {
-                if !warned_unsupported {
+                if unsupported_since.is_none() {
                     backoff = BACKOFF_MIN;
                 }
                 let mut client = PublicServiceClient::new(ch);
@@ -689,14 +758,21 @@ async fn transfers_info_loop(url: String, connect_timeout_ms: u64, tx: EventTx) 
                 }
                 match client.new_transfers_info_server(transfers_info_request()).await {
                     Err(e) => {
-                        if !warned_unsupported {
+                        rep.rpc_failed(&e);
+                        let since = *unsupported_since.get_or_insert_with(Instant::now);
+                        let due = last_unsupported_warn
+                            .map(|t| t.elapsed() >= UNIMPLEMENTED_REWARN)
+                            .unwrap_or(true);
+                        if due {
                             warn!(
                                 stream = "transfers",
                                 ?e,
+                                unavailable_for_secs = since.elapsed().as_secs(),
                                 "NewTransfersInfoServer unavailable on this node \
-                                 (requires execution-info); will keep retrying"
+                                 (node must be built with --features execution-info); \
+                                 transfers are NOT being indexed — will keep retrying"
                             );
-                            warned_unsupported = true;
+                            last_unsupported_warn = Some(Instant::now());
                         }
                         sleep(backoff).await;
                         backoff = bump_backoff(backoff);
@@ -708,8 +784,12 @@ async fn transfers_info_loop(url: String, connect_timeout_ms: u64, tx: EventTx) 
                         loop {
                             match stream.message().await {
                                 Ok(Some(msg @ NewTransfersInfoServerResponse { .. })) => {
+                                    if !got_any && unsupported_since.take().is_some() {
+                                        info!(stream = "transfers", "NewTransfersInfoServer is delivering again");
+                                    }
                                     got_any = true;
-                                    warned_unsupported = false;
+                                    last_unsupported_warn = None;
+                                    rep.event();
                                     if tx.send(Event::Transfers(Box::new(msg))).await.is_err() {
                                         info!("ingest channel closed; stopping transfers stream");
                                         return;
@@ -717,22 +797,29 @@ async fn transfers_info_loop(url: String, connect_timeout_ms: u64, tx: EventTx) 
                                 }
                                 Ok(None) => {
                                     if !got_any {
-                                        if !warned_unsupported {
+                                        let since = *unsupported_since.get_or_insert_with(Instant::now);
+                                        let due = last_unsupported_warn
+                                            .map(|t| t.elapsed() >= UNIMPLEMENTED_REWARN)
+                                            .unwrap_or(true);
+                                        if due {
                                             warn!(
                                                 stream = "transfers",
-                                                "stream closed with no data \
-                                                 (node likely built without \
-                                                 execution-info); backing off"
+                                                unavailable_for_secs = since.elapsed().as_secs(),
+                                                "stream closed with no data (node likely built \
+                                                 without execution-info); backing off"
                                             );
-                                            warned_unsupported = true;
+                                            last_unsupported_warn = Some(Instant::now());
                                         }
+                                        rep.state(StreamState::Unimplemented);
                                     } else {
                                         warn!(stream = "transfers", "stream ended");
+                                        rep.state(StreamState::Reconnecting);
                                     }
                                     break;
                                 }
                                 Err(e) => {
                                     warn!(stream = "transfers", ?e, "stream error");
+                                    rep.state(StreamState::Reconnecting);
                                     break;
                                 }
                             }
@@ -749,12 +836,13 @@ async fn transfers_info_loop(url: String, connect_timeout_ms: u64, tx: EventTx) 
     }
 }
 
-async fn slot_exec_loop(url: String, connect_timeout_ms: u64, tx: EventTx) {
+async fn slot_exec_loop(url: String, connect_timeout_ms: u64, tx: EventTx, rep: StreamReporter) {
     let mut backoff = BACKOFF_MIN;
     loop {
         match connect_endpoint(&url, connect_timeout_ms).await {
             Err(e) => {
                 warn!(stream = "exec", ?e, "connect failed");
+                rep.state(StreamState::Reconnecting);
                 sleep(backoff).await;
                 backoff = bump_backoff(backoff);
                 continue;
@@ -769,6 +857,7 @@ async fn slot_exec_loop(url: String, connect_timeout_ms: u64, tx: EventTx) {
                 {
                     Err(e) => {
                         warn!(stream = "exec", ?e, "rpc failed");
+                        rep.rpc_failed(&e);
                         sleep(backoff).await;
                         backoff = bump_backoff(backoff);
                         continue;
@@ -780,6 +869,7 @@ async fn slot_exec_loop(url: String, connect_timeout_ms: u64, tx: EventTx) {
                                 Ok(Some(NewSlotExecutionOutputsServerResponse {
                                     output: Some(out),
                                 })) => {
+                                    rep.event();
                                     if tx.send(Event::Exec(Box::new(out))).await.is_err() {
                                         info!("ingest channel closed; stopping exec stream");
                                         return;
@@ -798,6 +888,7 @@ async fn slot_exec_loop(url: String, connect_timeout_ms: u64, tx: EventTx) {
                                 }
                             }
                         }
+                        rep.state(StreamState::Reconnecting);
                     }
                 }
             }

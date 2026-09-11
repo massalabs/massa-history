@@ -54,6 +54,7 @@ fn make_config(port: u16, db_path: &str) -> Config {
         },
         streams: Streams::default(),
         legacy_ddb: LegacyDdb::default(),
+        repair: Default::default(),
     }
 }
 

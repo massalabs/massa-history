@@ -154,22 +154,34 @@ impl Ingest {
                     }
                 }
                 Event::PeerPatch(resp) => {
-                    if let Err(e) = crate::peer::apply_peer_patch(
+                    match crate::peer::apply_peer_patch(
                         &self.db,
                         &self.sse,
                         resp.as_ref(),
                         now_ms(),
                     ) {
-                        warn!(error = %e, "apply_peer_patch");
-                        self.bump(|m| {
-                            m.ingest_events_dropped_total
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        });
-                    } else {
-                        self.bump(|m| {
-                            m.ingest_peer_patches_total
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        });
+                        Err(e) => {
+                            warn!(error = %e, "apply_peer_patch");
+                            self.bump(|m| {
+                                m.ingest_events_dropped_total
+                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            });
+                        }
+                        Ok(out) => {
+                            self.bump(|m| {
+                                use std::sync::atomic::Ordering::Relaxed;
+                                m.ingest_peer_patches_total.fetch_add(1, Relaxed);
+                                if out.became_final {
+                                    m.peer_promoted_final_total.fetch_add(1, Relaxed);
+                                }
+                                if out.divergence_repaired {
+                                    m.peer_divergence_repaired_total.fetch_add(1, Relaxed);
+                                }
+                                if out.divergence_kept_local {
+                                    m.peer_divergence_kept_local_total.fetch_add(1, Relaxed);
+                                }
+                            });
+                        }
                     }
                 }
                 Event::LegacyPatch(resp) => {
@@ -477,23 +489,51 @@ impl Ingest {
             .read_slot(slot.period, slot.thread)?
             .unwrap_or_else(|| SlotState::fresh(slot, now_ms));
 
-        // First-final-wins (§7.1)
+        // First-final-wins (§7.1). The slot may already be FINAL because a
+        // peer patch got there first (head race after a restart). The
+        // peer's verdict stands, but the node's FINAL exec output is the
+        // primary source for everything *derived* from it — SC events,
+        // per-op execution statuses, async-pool rows — so when the node
+        // agrees on the verdict and the exec part is still unsettled we
+        // apply it now instead of dropping it.
         if state.status == SlotStatus::Final {
-            if is_final {
-                if let (Some(existing), Some(incoming)) =
-                    (state.execution_trail_hash.as_deref(), trail_hash.as_deref())
-                {
-                    if existing != incoming {
-                        warn!(
-                            period = slot.period,
-                            thread = slot.thread,
-                            existing,
-                            incoming,
-                            "FINAL trail-hash divergence ignored (first-wins)"
-                        );
-                    }
+            if !is_final {
+                return Ok(());
+            }
+            if let (Some(existing), Some(incoming)) =
+                (state.execution_trail_hash.as_deref(), trail_hash.as_deref())
+            {
+                if existing != incoming {
+                    warn!(
+                        period = slot.period,
+                        thread = slot.thread,
+                        existing,
+                        incoming,
+                        "FINAL trail-hash divergence ignored (first-wins)"
+                    );
+                    return Ok(());
                 }
             }
+            let node_block = exec
+                .block_id
+                .as_ref()
+                .and_then(|b| BlockId::parse(b.clone()).ok());
+            let same_verdict = state.is_miss == exec.block_id.is_none()
+                && (state.is_miss || node_block.as_ref() == state.final_block_id.as_ref());
+            if !same_verdict {
+                warn!(
+                    period = slot.period,
+                    thread = slot.thread,
+                    local_block = ?state.final_block_id,
+                    node_block = ?exec.block_id,
+                    "node FINAL verdict differs from local FINAL; keeping local (§7.1)"
+                );
+                return Ok(());
+            }
+            if state.completeness.exec_output_final {
+                return Ok(());
+            }
+            self.complete_final_exec_from_node(&mut state, &exec, now_ms)?;
             return Ok(());
         }
 
@@ -608,6 +648,69 @@ impl Ingest {
             }
         }
         self.sse.broadcast(SlotSseEvent::SlotUpdated(state));
+        Ok(())
+    }
+
+    /// Apply the node's FINAL execution output to a slot that a peer patch
+    /// already marked FINAL with the *same* verdict but without the exec
+    /// part settled. Writes exactly what the FINAL branch of
+    /// [`Self::handle_exec`] would have written had the node been first.
+    fn complete_final_exec_from_node(
+        &mut self,
+        state: &mut SlotState,
+        exec: &m::ExecutionOutput,
+        now_ms: i64,
+    ) -> Result<()> {
+        let slot = state.slot;
+        if state.execution_trail_hash.is_none() {
+            state.execution_trail_hash = exec
+                .state_changes
+                .as_ref()
+                .and_then(|sc| sc.execution_trail_hash_change.as_ref())
+                .and_then(|ch| match ch.change.as_ref() {
+                    Some(m::set_or_keep_string::Change::Set(sv)) => Some(sv.clone()),
+                    _ => None,
+                });
+        }
+
+        self.db.clear_sc_events_for_slot(slot.period, slot.thread)?;
+        let mut sc_count = 0u32;
+        for (i, ev) in exec.events.iter().enumerate() {
+            let (emitters, callers, op_id) = extract_event_context(ev);
+            let stored = StoredScEvent {
+                slot,
+                index_in_slot: i as u32,
+                data: stringify_bytes(&ev.data),
+                emitter_addrs: emitters,
+                caller_addrs: callers,
+                status: SlotStatus::Final,
+                op_id,
+            };
+            self.db.write_sc_event(&stored)?;
+            self.sse.broadcast(SlotSseEvent::EventSeen(stored));
+            sc_count += 1;
+        }
+        state.sc_event_count = sc_count;
+        state.completeness.exec_output_final = true;
+
+        if let Some(sc) = exec.state_changes.as_ref() {
+            let op_ids_in_slot = self.apply_executed_ops_changes(&sc.executed_ops_changes, true)?;
+            if !op_ids_in_slot.is_empty() && state.executed_op_ids.is_empty() {
+                state.executed_op_ids = op_ids_in_slot;
+            }
+            self.apply_async_pool_changes(slot, &sc.async_pool_changes, now_ms)?;
+        }
+        self.apply_finality_to_blocks(state.final_block_id.as_ref(), &state.candidate_block_ids)?;
+
+        state.last_updated_ts_ms = now_ms;
+        self.db.write_slot(state)?;
+        debug!(
+            period = slot.period,
+            thread = slot.thread,
+            sc_count,
+            "node FINAL exec completed a peer-finalised slot"
+        );
+        self.sse.broadcast(SlotSseEvent::SlotUpdated(state.clone()));
         Ok(())
     }
 
@@ -1739,6 +1842,92 @@ mod tests {
         let s = ingest.db.read_slot(3, 0).unwrap().unwrap();
         assert_eq!(s.status, SlotStatus::Final);
         assert_eq!(s.execution_trail_hash.as_deref(), Some("t-x"));
+    }
+
+    /// Head race: a peer patch finalised the slot (same verdict) before
+    /// the node's FINAL exec arrived. The node's exec part must still be
+    /// applied — events, op statuses, completeness — not dropped.
+    #[tokio::test]
+    async fn node_final_exec_completes_peer_finalised_slot() {
+        let mut ingest = mk_env();
+        let slot = Slot::new(4, 0);
+        let bid = crate::ids::mk_test_block_id(4);
+        let oid = crate::ids::mk_test_op_id(4);
+
+        // Local op from the live block, no final status yet.
+        ingest
+            .db
+            .write_op(&StoredOperation {
+                id: oid.clone(),
+                creator: crate::ids::mk_test_user_addr(1),
+                target: None,
+                kind: OperationKind::Transaction,
+                expire_period: 1,
+                fee_nmas: 0,
+                thread: 0,
+                inclusions: vec![],
+                candidate_exec_status: None,
+                final_exec_status: None,
+                details: Default::default(),
+                signature: String::new(),
+                content_creator_pub_key: String::new(),
+                serialized_size: 0,
+                raw_signed_op_b64: String::new(),
+                first_seen_ts_ms: 0,
+            })
+            .unwrap();
+
+        // Peer-finalised slot: verdict = block `bid`, exec part unsettled.
+        let mut s = SlotState::fresh(slot, 0);
+        s.status = SlotStatus::Final;
+        s.final_block_id = Some(bid.clone());
+        s.candidate_block_ids = vec![bid.clone()];
+        s.execution_trail_hash = Some("peer-trail".into());
+        s.completeness.block_body_stored = true;
+        ingest.db.write_slot(&s).unwrap();
+
+        // Node FINAL exec for the same block: one event, op executed OK.
+        let mut e = exec_output(4, 0, true, Some("peer-trail"));
+        {
+            let out = e.execution_output.as_mut().unwrap();
+            out.block_id = Some(bid.to_string());
+            out.events.push(m::ScExecutionEvent {
+                context: None,
+                data: b"hello".to_vec(),
+            });
+            out.state_changes.as_mut().unwrap().executed_ops_changes.push(
+                m::ExecutedOpsChangeEntry {
+                    operation_id: oid.to_string(),
+                    value: Some(m::ExecutedOpsChangeValue {
+                        status: m::OperationExecutionStatus::Success as i32,
+                        slot: Some(m::Slot { period: 4, thread: 0 }),
+                    }),
+                },
+            );
+        }
+        ingest.handle_exec(e).unwrap();
+
+        let back = ingest.db.read_slot(4, 0).unwrap().unwrap();
+        assert_eq!(back.status, SlotStatus::Final);
+        assert_eq!(back.final_block_id.as_ref(), Some(&bid));
+        assert!(back.completeness.exec_output_final, "node exec must settle the part");
+        assert_eq!(back.sc_event_count, 1);
+        assert_eq!(back.executed_op_ids, vec![oid.clone()]);
+        let op = ingest.db.read_op(&oid).unwrap().unwrap();
+        assert_eq!(op.final_exec_status, Some(ExecStatus::Ok));
+
+        // A node exec with a *different* block verdict is ignored (§7.1).
+        let mut other = exec_output(4, 0, true, Some("peer-trail"));
+        other.execution_output.as_mut().unwrap().block_id =
+            Some(crate::ids::mk_test_block_id(99).to_string());
+        other.execution_output.as_mut().unwrap().events.push(m::ScExecutionEvent {
+            context: None,
+            data: b"rogue".to_vec(),
+        });
+        ingest.handle_exec(other).unwrap();
+        let back = ingest.db.read_slot(4, 0).unwrap().unwrap();
+        assert_eq!(back.final_block_id.as_ref(), Some(&bid));
+        assert_eq!(back.sc_event_count, 1);
     }
 
     #[tokio::test]

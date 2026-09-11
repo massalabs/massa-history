@@ -252,11 +252,33 @@ type ApiResult<T> = std::result::Result<T, ApiErr>;
 // ---------------------------------------------------------------------------
 
 async fn health(State(s): State<AppState>) -> impl IntoResponse {
+    // `status` is "ok" while every enabled node stream is either
+    // delivering or merely reconnecting, and "degraded" when an enabled
+    // stream is `Unimplemented` on the node (data is silently not being
+    // indexed — the node must be rebuilt with the right features). The
+    // HTTP code stays 200 in both cases so supervisors keep the process
+    // up; the field is what dashboards and the deploy script check.
+    let streams: serde_json::Map<String, serde_json::Value> = crate::metrics::StreamKind::ALL
+        .iter()
+        .map(|k| {
+            let h = s.metrics.stream_health(*k);
+            (
+                k.label().to_string(),
+                serde_json::json!({
+                    "enabled": h.enabled,
+                    "state": h.state.label(),
+                    "last_event_ms": h.last_event_ms,
+                }),
+            )
+        })
+        .collect();
+    let degraded = s.metrics.streams_degraded();
     Json(serde_json::json!({
-        "status": "ok",
+        "status": if degraded { "degraded" } else { "ok" },
         "network": s.config.general.network,
         "uptime_secs": s.started_at.elapsed().as_secs(),
         "build_version": s.build_version,
+        "streams": streams,
     }))
 }
 
@@ -2024,26 +2046,37 @@ async fn addr_deferred(
 async fn backfill_status(
     State(s): State<AppState>,
 ) -> ApiResult<Json<Envelope<serde_json::Value>>> {
+    use std::sync::atomic::Ordering::Relaxed;
+    // Everything here is O(1): counters plus RocksDB's row estimate. The
+    // previous version decoded every `cf_slot` row on each call (170 M
+    // rows in production) on a publicly routed endpoint.
     let total_slots = s.db.approx_row_counts()
         .into_iter()
         .find(|(name, _)| *name == "cf_slot")
         .map(|(_, n)| n)
         .unwrap_or(0);
-    let streams = s.config.streams.expected();
-    let incomplete = s.db.count_incomplete_slots(&streams).map_err(ApiErr::from)?;
-    let passes = s.metrics.backfill_passes_total.load(std::sync::atomic::Ordering::Relaxed);
-    let rpcs = s.metrics.backfill_rpcs_total.load(std::sync::atomic::Ordering::Relaxed);
-    let filled = s.metrics.backfill_slots_filled_total.load(std::sync::atomic::Ordering::Relaxed);
+    let m = &s.metrics;
     let peers_configured = s.config.peer.peers.len() as u64;
     let v = serde_json::json!({
         "enabled": s.config.peer.enabled && peers_configured > 0,
         "peers_configured": peers_configured,
         "scan_interval_ms": s.config.peer.scan_interval_ms,
-        "total_slots": total_slots,
-        "incomplete_slots": incomplete,
-        "passes_total": passes,
-        "rpcs_total": rpcs,
-        "slots_filled_total": filled,
+        "total_slots_estimate": total_slots,
+        "passes_total": m.backfill_passes_total.load(Relaxed),
+        "rpcs_total": m.backfill_rpcs_total.load(Relaxed),
+        "slots_filled_total": m.backfill_slots_filled_total.load(Relaxed),
+        "stale_candidates_total": m.backfill_stale_candidates_total.load(Relaxed),
+        "suspicious_misses_total": m.backfill_suspicious_misses_total.load(Relaxed),
+        "recent_incomplete_total": m.backfill_recent_incomplete_total.load(Relaxed),
+        "recheck_total": m.backfill_recheck_total.load(Relaxed),
+        "peer_promoted_final_total": m.peer_promoted_final_total.load(Relaxed),
+        "divergence_repaired_total": m.peer_divergence_repaired_total.load(Relaxed),
+        "divergence_kept_local_total": m.peer_divergence_kept_local_total.load(Relaxed),
+        "repair": {
+            "slots_scanned_total": m.repair_slots_scanned_total.load(Relaxed),
+            "transfers_reconstructed_total": m.repair_transfers_reconstructed_total.load(Relaxed),
+            "pull_slots_applied_total": m.repair_pull_slots_applied_total.load(Relaxed),
+        },
     });
     Ok(Json(Envelope::new(&s.config.general.network, v)))
 }
@@ -2303,6 +2336,7 @@ mod tests {
             peer: crate::config::Peer::default(),
             streams: crate::config::Streams::default(),
             legacy_ddb: crate::config::LegacyDdb::default(),
+            repair: crate::config::Repair::default(),
         };
         AppState {
             db,
@@ -2327,6 +2361,33 @@ mod tests {
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(v["status"], "ok");
         assert_eq!(v["network"], "buildnet");
+        assert_eq!(v["streams"]["transfers"]["state"], "idle");
+    }
+
+    /// An enabled stream the node reports as `Unimplemented` flips the
+    /// health status to "degraded" (HTTP 200 kept) and is visible per
+    /// stream, so a node built without `execution-info` cannot go
+    /// unnoticed again.
+    #[tokio::test]
+    async fn health_degraded_when_enabled_stream_unimplemented() {
+        use crate::metrics::{StreamKind, StreamState};
+        let st = mk_state();
+        st.metrics.stream_set_enabled(StreamKind::Transfers, true);
+        st.metrics.stream_set_state(StreamKind::Transfers, StreamState::Unimplemented);
+        st.metrics.stream_set_enabled(StreamKind::Blocks, true);
+        st.metrics.stream_event(StreamKind::Blocks, 123);
+        let app = router(st);
+        let res = app
+            .oneshot(Request::builder().uri("/v1/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 200);
+        let body = to_bytes(res.into_body(), 1 << 20).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["status"], "degraded");
+        assert_eq!(v["streams"]["transfers"]["state"], "unimplemented");
+        assert_eq!(v["streams"]["blocks"]["state"], "streaming");
+        assert_eq!(v["streams"]["blocks"]["last_event_ms"], 123);
     }
 
     #[tokio::test]

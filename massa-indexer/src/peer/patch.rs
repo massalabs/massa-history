@@ -32,7 +32,7 @@ use crate::{
         BlockStatus, Slot, SlotCompleteness, SlotState, SlotStatus, StoredBlock, StoredEndorsement,
         StoredOperation, StoredScEvent, StoredTransfer,
     },
-    proto::indexer::v1::FinalSlotResponse,
+    proto::indexer::v1::{FinalSlotParts, FinalSlotResponse},
     sse::SseHub,
     Result,
 };
@@ -67,6 +67,141 @@ pub struct PatchOutcome {
     pub trail_mismatch: bool,
     /// True if the peer said `final_known == false` (no data).
     pub empty: bool,
+    /// True if the peer proposed a different FINAL verdict (block / miss)
+    /// and chain linkage proved the peer right: the local verdict was
+    /// replaced and the slot rebuilt from the peer's parts.
+    pub divergence_repaired: bool,
+    /// True if the peer proposed a different FINAL verdict but linkage
+    /// confirmed the local one (or was inconclusive): local kept.
+    pub divergence_kept_local: bool,
+}
+
+/// FINAL verdict for a slot, as recorded locally or proposed by a peer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict {
+    Miss,
+    Block(BlockId),
+}
+
+impl Verdict {
+    fn of_local(state: &SlotState) -> Option<Verdict> {
+        if state.is_miss {
+            Some(Verdict::Miss)
+        } else {
+            state.final_block_id.clone().map(Verdict::Block)
+        }
+    }
+
+    fn of_peer(resp: &FinalSlotResponse, final_block_id: &Option<BlockId>) -> Option<Verdict> {
+        if resp.is_miss {
+            Some(Verdict::Miss)
+        } else {
+            final_block_id.clone().map(Verdict::Block)
+        }
+    }
+}
+
+/// What the chain-linkage arbiter concluded about two competing FINAL
+/// verdicts for the same slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Arbitration {
+    /// Later blocks in the thread build on the peer's block (or skip the
+    /// slot when the peer says miss): the peer is right.
+    AdoptPeer,
+    /// Later blocks build on the local block: local is right.
+    KeepLocal,
+    /// No later FINAL block with a stored body within the lookahead, or
+    /// the linkage points at a third block: cannot decide, keep local.
+    Inconclusive,
+}
+
+/// How many periods ahead / behind the disputed slot to look for the
+/// neighbouring FINAL blocks in the same thread. Misses are rare enough
+/// that a few hundred periods always contain a block; the bound only
+/// exists so a dispute at the head cannot trigger an unbounded scan.
+const LINKAGE_LOOKAROUND: u64 = 512;
+
+/// `parents[thread]` of the first FINAL non-miss block **after** `slot`
+/// in the same thread whose body we hold. Every Massa block header lists
+/// one parent per thread — the previous block in that thread — so this
+/// is the chain's own statement of which block was final at (or before)
+/// `slot`.
+fn next_parent_link(db: &Db, slot: Slot) -> Result<Option<BlockId>> {
+    for p in (slot.period + 1)..=(slot.period + LINKAGE_LOOKAROUND) {
+        let Some(s) = db.read_slot(p, slot.thread)? else { continue };
+        if s.status != SlotStatus::Final || s.is_miss {
+            continue;
+        }
+        let Some(bid) = s.final_block_id.as_ref() else { continue };
+        let Some(block) = db.read_block(bid)? else { continue };
+        return Ok(block.parents.get(slot.thread as usize).cloned());
+    }
+    Ok(None)
+}
+
+/// `final_block_id` of the last FINAL non-miss slot **before** `slot` in
+/// the same thread. When the disputed slot really was a miss, the next
+/// block's parent link points here.
+fn prev_final_block(db: &Db, slot: Slot) -> Result<Option<BlockId>> {
+    let lo = slot.period.saturating_sub(LINKAGE_LOOKAROUND);
+    for p in (lo..slot.period).rev() {
+        let Some(s) = db.read_slot(p, slot.thread)? else { continue };
+        if s.status != SlotStatus::Final || s.is_miss {
+            continue;
+        }
+        if let Some(bid) = s.final_block_id.as_ref() {
+            return Ok(Some(bid.clone()));
+        }
+    }
+    Ok(None)
+}
+
+/// Decide between a local and a peer FINAL verdict using the parent links
+/// of neighbouring FINAL blocks. Pure function of local data plus the two
+/// verdicts; never contacts the network.
+pub fn arbitrate_verdicts(
+    db: &Db,
+    slot: Slot,
+    local: &Verdict,
+    peer: &Verdict,
+) -> Result<Arbitration> {
+    if local == peer {
+        return Ok(Arbitration::KeepLocal);
+    }
+    let Some(next_parent) = next_parent_link(db, slot)? else {
+        return Ok(Arbitration::Inconclusive);
+    };
+    Ok(match (local, peer) {
+        (Verdict::Block(x), Verdict::Block(y)) => {
+            if next_parent == *y {
+                Arbitration::AdoptPeer
+            } else if next_parent == *x {
+                Arbitration::KeepLocal
+            } else {
+                Arbitration::Inconclusive
+            }
+        }
+        (Verdict::Miss, Verdict::Block(y)) => {
+            if next_parent == *y {
+                Arbitration::AdoptPeer
+            } else {
+                Arbitration::KeepLocal
+            }
+        }
+        (Verdict::Block(x), Verdict::Miss) => {
+            if next_parent == *x {
+                Arbitration::KeepLocal
+            } else if prev_final_block(db, slot)?.as_ref() == Some(&next_parent) {
+                // The next block skips our slot entirely and builds on
+                // the previous block in the thread: our block was never
+                // final, the slot was a miss.
+                Arbitration::AdoptPeer
+            } else {
+                Arbitration::Inconclusive
+            }
+        }
+        (Verdict::Miss, Verdict::Miss) => Arbitration::KeepLocal,
+    })
 }
 
 /// Apply a *legacy*-source `FinalSlotResponse` (i.e. one stitched together
@@ -285,6 +420,11 @@ pub fn apply_peer_patch(
             }
         }
     };
+    // Which parts the peer actually honoured. Old servers (< 0.0.2) leave
+    // this empty and `completeness_known = false`; every settlement below
+    // then degrades to the historical "payload present ⇒ applied" rule.
+    let echo = resp.completeness_known;
+    let honoured: FinalSlotParts = resp.parts.unwrap_or_default();
 
     let became_final = if state.status != SlotStatus::Final {
         state.status = SlotStatus::Final;
@@ -303,25 +443,72 @@ pub fn apply_peer_patch(
         out.became_final = true;
         true
     } else {
-        // First-final-wins trail-hash check (§7.1 / §8.3).
-        if let (Some(existing), Some(incoming)) = (state.execution_trail_hash.as_deref(), peer_trail.as_deref()) {
-            if existing != incoming {
-                warn!(
-                    period = slot.period,
-                    thread = slot.thread,
-                    existing,
-                    incoming,
-                    "peer trail-hash mismatch; keeping local FINAL (§7.1)"
-                );
-                out.trail_mismatch = true;
-                // Still write the slot back below (no-op) to touch last_updated.
-                state.last_updated_ts_ms = now_ms;
-                db.write_slot(&state)?;
-                return Ok(out);
+        // Both sides are FINAL. If the *verdicts* differ (different block,
+        // or block vs miss) one node was on a dead fork when it finalised
+        // this slot — seen at protocol upgrades. First-final-wins cannot
+        // settle that; the chain can: later blocks in the thread name
+        // their parent. Adopt the peer only when linkage proves it.
+        let local_v = Verdict::of_local(&state);
+        let peer_v = Verdict::of_peer(resp, &final_block_id_opt);
+        if let (Some(lv), Some(pv)) = (local_v, peer_v) {
+            if lv != pv {
+                match arbitrate_verdicts(db, slot, &lv, &pv)? {
+                    Arbitration::AdoptPeer => {
+                        warn!(
+                            period = slot.period,
+                            thread = slot.thread,
+                            local = ?lv,
+                            peer = ?pv,
+                            "divergent FINAL verdict: chain linkage confirms peer; repairing local slot"
+                        );
+                        adopt_peer_verdict(db, &mut state, resp, &final_block_id_opt, peer_trail.clone())?;
+                        out.divergence_repaired = true;
+                    }
+                    other => {
+                        info!(
+                            period = slot.period,
+                            thread = slot.thread,
+                            local = ?lv,
+                            peer = ?pv,
+                            arbitration = ?other,
+                            "divergent FINAL verdict: keeping local"
+                        );
+                        out.divergence_kept_local = true;
+                        if let (Some(existing), Some(incoming)) =
+                            (state.execution_trail_hash.as_deref(), peer_trail.as_deref())
+                        {
+                            out.trail_mismatch = existing != incoming;
+                        }
+                        state.last_updated_ts_ms = now_ms;
+                        db.write_slot(&state)?;
+                        return Ok(out);
+                    }
+                }
             }
-        } else if state.execution_trail_hash.is_none() {
-            // We were FINAL without a trail hash (edge case) — accept peer's.
-            state.execution_trail_hash = peer_trail.clone();
+        }
+        if !out.divergence_repaired {
+            // Same verdict: first-final-wins trail-hash check (§7.1 / §8.3).
+            if let (Some(existing), Some(incoming)) =
+                (state.execution_trail_hash.as_deref(), peer_trail.as_deref())
+            {
+                if existing != incoming {
+                    warn!(
+                        period = slot.period,
+                        thread = slot.thread,
+                        existing,
+                        incoming,
+                        "peer trail-hash mismatch; keeping local FINAL (§7.1)"
+                    );
+                    out.trail_mismatch = true;
+                    // Still write the slot back below (no-op) to touch last_updated.
+                    state.last_updated_ts_ms = now_ms;
+                    db.write_slot(&state)?;
+                    return Ok(out);
+                }
+            } else if state.execution_trail_hash.is_none() {
+                // We were FINAL without a trail hash (edge case) — accept peer's.
+                state.execution_trail_hash = peer_trail.clone();
+            }
         }
         false
     };
@@ -339,13 +526,19 @@ pub fn apply_peer_patch(
 
     // --- Block body -------------------------------------------------------
     let block_part_requested = resp.block.is_some();
-    if block_part_requested && !state.completeness.block_body_stored && !resp.is_miss {
+    if block_part_requested && !resp.is_miss {
+        // Body missing locally → store it. Body already present (typical
+        // for a stale Candidate that saw the block live) → still walk the
+        // peer's operation rows to merge FINAL execution statuses the
+        // node never delivered to us.
         if let Some(block) = apply_block_part(db, resp, now_ms)? {
             if !state.candidate_block_ids.iter().any(|b| b == &block.id) {
                 state.candidate_block_ids.push(block.id.clone());
             }
-            state.completeness.block_body_stored = true;
-            out.block_applied = true;
+            if !state.completeness.block_body_stored {
+                state.completeness.block_body_stored = true;
+                out.block_applied = true;
+            }
         }
     }
     if resp.is_miss {
@@ -356,15 +549,17 @@ pub fn apply_peer_patch(
     // --- Exec output ------------------------------------------------------
     // The exec_output part ships FOUR things: sc_events, executed_op_ids,
     // sc_event_count, and async_msgs. Any of them being non-empty means
-    // there is payload to apply. An empty response from a FINAL peer is
-    // still authoritative ("this slot has no exec output") — we mark
-    // `exec_output_final` once we already have a block body / miss, so
-    // the backfill walker does not re-query the same slot forever.
+    // there is payload to apply. An *empty* exec part is settled only
+    // when a >= 0.0.2 peer explicitly says it honoured the part and holds
+    // the FINAL exec output (`has_exec_output`): "this slot genuinely had
+    // no exec payload" is a fact, not a gap. Old peers cannot say that,
+    // so with them empty stays unsettled (historical behaviour).
     let exec_part_present = !resp.executed_op_ids.is_empty()
         || resp.sc_event_count > 0
         || !resp.sc_events.is_empty()
         || !resp.async_msgs.is_empty();
-    if exec_part_present && !state.completeness.exec_output_final {
+    let exec_asserted = echo && honoured.exec_output && resp.has_exec_output;
+    if (exec_part_present || exec_asserted) && !state.completeness.exec_output_final {
         apply_exec_part(db, resp)?;
         if state.executed_op_ids.is_empty() {
             state.executed_op_ids = resp
@@ -377,28 +572,25 @@ pub fn apply_peer_patch(
         state.completeness.exec_output_final = true;
         out.exec_applied = true;
     }
-    // Note: we intentionally do NOT settle `exec_output_final` on an empty
-    // exec payload. Partial-part fetches (block-only, then exec-only) are
-    // valid, and an empty exec section usually means "not requested" rather
-    // than "peer asserts none". The backfill walker already skips FINAL
-    // slots that have `block_body_stored` / `is_miss`, so empty-exec settle
-    // is not required to prevent re-query storms.
 
     // --- Transfers --------------------------------------------------------
+    // Same rule: a non-empty list is applied; an empty list is applied
+    // (and the flag settled) only when the peer asserts it holds the
+    // FINAL transfer list for the slot.
     let transfers_part_present = !resp.transfers.is_empty() || !resp.deferred_calls.is_empty();
-    if transfers_part_present && !state.completeness.transfers_stored {
+    let transfers_asserted = echo && honoured.transfers && resp.has_transfers;
+    if (transfers_part_present || transfers_asserted) && !state.completeness.transfers_stored {
         apply_transfers_part(db, resp, now_ms)?;
         state.completeness.transfers_stored = true;
         out.transfers_applied = true;
     }
 
     // --- Final block status propagation ----------------------------------
-    // Once we have both the block body AND a final verdict, we can safely
-    // mark the winning block FINAL and discard the rest. This mirrors the
-    // logic in `ingest::handle_exec`.
-    if state.completeness.exec_output_final && state.completeness.block_body_stored {
-        apply_finality_to_blocks(db, state.final_block_id.as_ref(), &state.candidate_block_ids)?;
-    }
+    // The slot is FINAL here, so every block we hold for it can be settled
+    // (winner → Final, others → Discarded) regardless of whether the exec
+    // part arrived. Idempotent: only blocks whose status changes are
+    // rewritten.
+    apply_finality_to_blocks(db, state.final_block_id.as_ref(), &state.candidate_block_ids)?;
 
     state.last_updated_ts_ms = now_ms;
     db.write_slot(&state)?;
@@ -416,11 +608,56 @@ pub fn apply_peer_patch(
             block = out.block_applied,
             exec = out.exec_applied,
             transfers = out.transfers_applied,
+            repaired = out.divergence_repaired,
             "peer patch applied"
         );
     }
+    if became_final || out.divergence_repaired {
+        sse.broadcast(SlotSseEvent::SlotFinal(state.clone()));
+    }
     sse.broadcast(SlotSseEvent::SlotUpdated(state));
     Ok(out)
+}
+
+/// Replace the local FINAL verdict with the peer's after chain linkage
+/// proved the local one wrong. Everything derived from the old verdict
+/// (exec output, transfers, completeness) is dropped so the parts shipped
+/// in the same response rebuild the slot; the superseded local block is
+/// marked `Discarded` so block pages stop calling it final.
+fn adopt_peer_verdict(
+    db: &Db,
+    state: &mut SlotState,
+    resp: &FinalSlotResponse,
+    peer_block: &Option<BlockId>,
+    peer_trail: Option<String>,
+) -> Result<()> {
+    let slot = state.slot;
+    if let Some(old) = state.final_block_id.take() {
+        if let Some(mut b) = db.read_block(&old)? {
+            if b.status != BlockStatus::Discarded {
+                b.status = BlockStatus::Discarded;
+                db.write_block(&b)?;
+            }
+        }
+    }
+    db.clear_sc_events_for_slot(slot.period, slot.thread)?;
+    db.clear_transfers_for_slot(slot.period, slot.thread)?;
+
+    state.is_miss = resp.is_miss;
+    state.final_block_id = if resp.is_miss { None } else { peer_block.clone() };
+    if let Some(bid) = state.final_block_id.as_ref() {
+        if !state.candidate_block_ids.iter().any(|b| b == bid) {
+            state.candidate_block_ids.push(bid.clone());
+        }
+    }
+    state.execution_trail_hash = peer_trail;
+    state.executed_op_ids.clear();
+    state.sc_event_count = 0;
+    state.completeness = SlotCompleteness {
+        block_body_stored: resp.is_miss,
+        ..Default::default()
+    };
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -443,8 +680,11 @@ fn apply_block_part(db: &Db, resp: &FinalSlotResponse, now_ms: i64) -> Result<Op
         db.write_block(&block)?;
     }
 
-    // Operations: write only when completely absent, so a locally-observed
-    // candidate status isn't regressed by a peer's view.
+    // Operations: write when completely absent. When a local row exists
+    // (the block arrived live but its FINAL exec never did — restart
+    // hole), merge only what the local row lacks: the FINAL execution
+    // status and, if we never recorded one, the inclusion site. A
+    // locally-observed status is never regressed by a peer's view.
     for op_pb in &resp.operations {
         let Some(op) = decode_or_warn::<StoredOperation, _>(
             crate::codec::operation_from_peer_pb(op_pb.clone()),
@@ -452,8 +692,23 @@ fn apply_block_part(db: &Db, resp: &FinalSlotResponse, now_ms: i64) -> Result<Op
         ) else {
             continue;
         };
-        if db.read_op(&op.id)?.is_none() {
-            db.write_op(&op)?;
+        match db.read_op(&op.id)? {
+            None => db.write_op(&op)?,
+            Some(mut local) => {
+                let mut changed = false;
+                if local.final_exec_status.is_none() && op.final_exec_status.is_some() {
+                    local.final_exec_status = op.final_exec_status;
+                    local.candidate_exec_status = op.final_exec_status;
+                    changed = true;
+                }
+                if local.inclusions.is_empty() && !op.inclusions.is_empty() {
+                    local.inclusions = op.inclusions.clone();
+                    changed = true;
+                }
+                if changed {
+                    db.write_op(&local)?;
+                }
+            }
         }
     }
 
@@ -1290,5 +1545,334 @@ mod tests {
             AsyncMsgState::Executed,
             "AsyncMsgCoins transfer must promote Pending → Executed on patch"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Restart-hole healing, completeness echo and the chain-linkage arbiter.
+    // -----------------------------------------------------------------------
+
+    fn mk_block(id: BlockId, slot: Slot, parents: Vec<BlockId>, ops: Vec<OperationId>) -> StoredBlock {
+        StoredBlock {
+            id,
+            slot,
+            creator: crate::ids::mk_test_user_addr(1),
+            parents,
+            operation_ids: ops,
+            endorsements: vec![],
+            endorsement_ids: vec![],
+            denunciations: vec![],
+            current_version: 0,
+            announced_version: None,
+            operations_hash: String::new(),
+            signature: String::new(),
+            content_creator_pub_key: String::new(),
+            serialized_size: 0,
+            raw_signed_header_b64: String::new(),
+            status: BlockStatus::SeenCandidate,
+            first_seen_ts_ms: 0,
+        }
+    }
+
+    fn mk_op(id: OperationId, slot: Slot, block: BlockId) -> StoredOperation {
+        StoredOperation {
+            id,
+            creator: crate::ids::mk_test_user_addr(2),
+            target: None,
+            kind: crate::model::OperationKind::Transaction,
+            expire_period: 10,
+            fee_nmas: 0,
+            thread: slot.thread,
+            inclusions: vec![OperationInclusion { slot, block_id: block }],
+            candidate_exec_status: Some(crate::model::ExecStatus::Ok),
+            final_exec_status: None,
+            details: Default::default(),
+            signature: String::new(),
+            content_creator_pub_key: String::new(),
+            serialized_size: 0,
+            raw_signed_op_b64: String::new(),
+            first_seen_ts_ms: 0,
+        }
+    }
+
+    /// Write a FINAL slot at `(period, 0)` holding `block` (with body) so
+    /// linkage checks have a "next block" to inspect.
+    fn write_final_with_body(db: &Db, slot: Slot, mut block: StoredBlock) {
+        block.status = BlockStatus::Final;
+        let mut s = SlotState::fresh(slot, 0);
+        s.status = SlotStatus::Final;
+        s.final_block_id = Some(block.id.clone());
+        s.candidate_block_ids = vec![block.id.clone()];
+        s.completeness = SlotCompleteness {
+            block_body_stored: true,
+            exec_output_final: true,
+            transfers_stored: true,
+            ..Default::default()
+        };
+        db.write_block(&block).unwrap();
+        db.write_slot(&s).unwrap();
+    }
+
+    /// The restart hole: block body arrived live (Candidate), the FINAL
+    /// exec never did. A peer's FINAL patch must promote the slot, settle
+    /// the block as Final and merge the op's FINAL execution status.
+    #[test]
+    fn stale_candidate_is_promoted_and_ops_get_final_status() {
+        use crate::ids::{mk_test_block_id, mk_test_op_id};
+        let (db, _dir, sse) = open_db();
+        let slot = Slot::new(20, 0);
+        let bid = mk_test_block_id(20);
+        let oid = mk_test_op_id(20);
+
+        // Local: candidate slot with body, op without final status.
+        db.write_block(&mk_block(bid.clone(), slot, vec![], vec![oid.clone()]))
+            .unwrap();
+        db.write_op(&mk_op(oid.clone(), slot, bid.clone())).unwrap();
+        let mut s = SlotState::fresh(slot, 0);
+        s.status = SlotStatus::Candidate;
+        s.candidate_block_ids = vec![bid.clone()];
+        s.completeness.block_body_stored = true;
+        s.completeness.exec_output_candidate = true;
+        db.write_slot(&s).unwrap();
+
+        // Peer: same block FINAL, op executed OK, exec part with the op id.
+        let mut peer_block = mk_block(bid.clone(), slot, vec![], vec![oid.clone()]);
+        peer_block.status = BlockStatus::Final;
+        let mut peer_op = mk_op(oid.clone(), slot, bid.clone());
+        peer_op.final_exec_status = Some(crate::model::ExecStatus::Ok);
+        let mut resp = fresh_resp(20, 0);
+        resp.final_block_id = bid.to_string();
+        resp.block = Some(crate::codec::block_to_peer_pb(&peer_block).unwrap());
+        resp.operations
+            .push(crate::codec::operation_to_peer_pb(&peer_op).unwrap());
+        resp.executed_op_ids.push(oid.to_string());
+
+        let out = apply_peer_patch(&db, &sse, &resp, 7).unwrap();
+        assert!(out.became_final);
+        assert!(!out.block_applied, "body was already local");
+        assert!(out.exec_applied);
+
+        let back = db.read_slot(20, 0).unwrap().unwrap();
+        assert_eq!(back.status, SlotStatus::Final);
+        assert_eq!(back.final_block_id.as_ref(), Some(&bid));
+        assert!(back.completeness.exec_output_final);
+        assert_eq!(back.executed_op_ids, vec![oid.clone()]);
+
+        let blk = db.read_block(&bid).unwrap().unwrap();
+        assert_eq!(blk.status, BlockStatus::Final, "block settled despite body being local");
+
+        let op = db.read_op(&oid).unwrap().unwrap();
+        assert_eq!(op.final_exec_status, Some(crate::model::ExecStatus::Ok));
+    }
+
+    /// A >= 0.0.2 peer that honoured the exec/transfers parts and asserts
+    /// it holds them lets us settle the flags on an *empty* payload; an
+    /// old peer (no echo) does not.
+    #[test]
+    fn completeness_echo_settles_empty_parts_only_when_asserted() {
+        let (db, _dir, sse) = open_db();
+        let honoured = FinalSlotParts {
+            block: true,
+            exec_output: true,
+            transfers: true,
+        };
+
+        // Old peer: empty parts, no echo → flags stay unsettled.
+        let old = fresh_resp(40, 0);
+        apply_peer_patch(&db, &sse, &old, 1).unwrap();
+        let s = db.read_slot(40, 0).unwrap().unwrap();
+        assert!(!s.completeness.exec_output_final);
+        assert!(!s.completeness.transfers_stored);
+
+        // New peer, honoured the parts but does NOT hold them → unsettled.
+        let mut new_missing = fresh_resp(40, 0);
+        new_missing.completeness_known = true;
+        new_missing.parts = Some(honoured);
+        apply_peer_patch(&db, &sse, &new_missing, 2).unwrap();
+        let s = db.read_slot(40, 0).unwrap().unwrap();
+        assert!(!s.completeness.exec_output_final);
+        assert!(!s.completeness.transfers_stored);
+
+        // New peer, holds both → settled, even though payloads are empty.
+        let mut new_has = fresh_resp(40, 0);
+        new_has.completeness_known = true;
+        new_has.parts = Some(honoured);
+        new_has.has_exec_output = true;
+        new_has.has_transfers = true;
+        let out = apply_peer_patch(&db, &sse, &new_has, 3).unwrap();
+        assert!(out.exec_applied && out.transfers_applied);
+        let s = db.read_slot(40, 0).unwrap().unwrap();
+        assert!(s.completeness.exec_output_final);
+        assert!(s.completeness.transfers_stored);
+
+        // A new peer that only honoured `transfers` must not settle exec.
+        let mut only_t = fresh_resp(41, 0);
+        only_t.completeness_known = true;
+        only_t.parts = Some(FinalSlotParts {
+            block: false,
+            exec_output: false,
+            transfers: true,
+        });
+        only_t.has_exec_output = true;
+        only_t.has_transfers = true;
+        apply_peer_patch(&db, &sse, &only_t, 4).unwrap();
+        let s = db.read_slot(41, 0).unwrap().unwrap();
+        assert!(!s.completeness.exec_output_final);
+        assert!(s.completeness.transfers_stored);
+    }
+
+    /// Two indexers finalised different blocks for the same slot (dead
+    /// fork at an upgrade). The next FINAL block in the thread names its
+    /// parent — that settles it. Here the peer's block is the real one.
+    #[test]
+    fn arbiter_adopts_peer_block_confirmed_by_next_parent() {
+        use crate::ids::mk_test_block_id;
+        let (db, _dir, sse) = open_db();
+        let slot = Slot::new(100, 0);
+        let x = mk_test_block_id(100); // local phantom
+        let y = mk_test_block_id(101); // real final block
+        let z = mk_test_block_id(102); // next block, builds on y
+
+        // Local: FINAL with phantom X, no body (nobody has it).
+        let mut s = SlotState::fresh(slot, 0);
+        s.status = SlotStatus::Final;
+        s.final_block_id = Some(x.clone());
+        s.candidate_block_ids = vec![x.clone()];
+        s.execution_trail_hash = Some("local-trail".into());
+        db.write_slot(&s).unwrap();
+        // We also hold X as a candidate body from the dead fork.
+        db.write_block(&mk_block(x.clone(), slot, vec![], vec![])).unwrap();
+
+        // Next slot in thread 0: final block Z with parents[0] = Y.
+        write_final_with_body(&db, Slot::new(101, 0), mk_block(z, Slot::new(101, 0), vec![y.clone()], vec![]));
+
+        // Peer proposes Y with body.
+        let mut peer_block = mk_block(y.clone(), slot, vec![], vec![]);
+        peer_block.status = BlockStatus::Final;
+        let mut resp = fresh_resp(100, 0);
+        resp.execution_trail_hash = "peer-trail".into();
+        resp.final_block_id = y.to_string();
+        resp.block = Some(crate::codec::block_to_peer_pb(&peer_block).unwrap());
+
+        let out = apply_peer_patch(&db, &sse, &resp, 9).unwrap();
+        assert!(out.divergence_repaired);
+        assert!(!out.divergence_kept_local);
+        assert!(out.block_applied);
+
+        let back = db.read_slot(100, 0).unwrap().unwrap();
+        assert_eq!(back.status, SlotStatus::Final);
+        assert_eq!(back.final_block_id.as_ref(), Some(&y));
+        assert_eq!(back.execution_trail_hash.as_deref(), Some("peer-trail"));
+        assert!(back.completeness.block_body_stored);
+        assert_eq!(db.read_block(&x).unwrap().unwrap().status, BlockStatus::Discarded);
+        assert_eq!(db.read_block(&y).unwrap().unwrap().status, BlockStatus::Final);
+
+        // Re-applying is a no-op (verdicts now agree).
+        let out2 = apply_peer_patch(&db, &sse, &resp, 10).unwrap();
+        assert!(!out2.divergence_repaired && !out2.divergence_kept_local);
+    }
+
+    /// Same setup but the chain builds on the *local* block: peer is on
+    /// the dead fork, local is kept untouched.
+    #[test]
+    fn arbiter_keeps_local_block_confirmed_by_next_parent() {
+        use crate::ids::mk_test_block_id;
+        let (db, _dir, sse) = open_db();
+        let slot = Slot::new(200, 0);
+        let x = mk_test_block_id(200);
+        let y = mk_test_block_id(201);
+        let z = mk_test_block_id(202);
+
+        write_final_with_body(&db, slot, mk_block(x.clone(), slot, vec![], vec![]));
+        write_final_with_body(&db, Slot::new(201, 0), mk_block(z, Slot::new(201, 0), vec![x.clone()], vec![]));
+
+        let mut resp = fresh_resp(200, 0);
+        resp.final_block_id = y.to_string();
+        let out = apply_peer_patch(&db, &sse, &resp, 9).unwrap();
+        assert!(out.divergence_kept_local);
+        assert!(!out.divergence_repaired);
+        let back = db.read_slot(200, 0).unwrap().unwrap();
+        assert_eq!(back.final_block_id.as_ref(), Some(&x));
+        assert_eq!(db.read_block(&x).unwrap().unwrap().status, BlockStatus::Final);
+    }
+
+    /// Local says miss although a body was seen; the next block builds on
+    /// that body → the miss verdict was wrong, adopt the peer's block.
+    #[test]
+    fn arbiter_repairs_wrong_miss_verdict() {
+        use crate::ids::mk_test_block_id;
+        let (db, _dir, sse) = open_db();
+        let slot = Slot::new(300, 0);
+        let b = mk_test_block_id(300);
+        let z = mk_test_block_id(302);
+
+        let mut s = SlotState::fresh(slot, 0);
+        s.status = SlotStatus::Final;
+        s.is_miss = true;
+        s.candidate_block_ids = vec![b.clone()];
+        s.completeness.block_body_stored = true;
+        db.write_slot(&s).unwrap();
+        db.write_block(&mk_block(b.clone(), slot, vec![], vec![])).unwrap();
+        write_final_with_body(&db, Slot::new(301, 0), mk_block(z, Slot::new(301, 0), vec![b.clone()], vec![]));
+
+        let mut peer_block = mk_block(b.clone(), slot, vec![], vec![]);
+        peer_block.status = BlockStatus::Final;
+        let mut resp = fresh_resp(300, 0);
+        resp.final_block_id = b.to_string();
+        resp.block = Some(crate::codec::block_to_peer_pb(&peer_block).unwrap());
+
+        let out = apply_peer_patch(&db, &sse, &resp, 9).unwrap();
+        assert!(out.divergence_repaired);
+        let back = db.read_slot(300, 0).unwrap().unwrap();
+        assert!(!back.is_miss);
+        assert_eq!(back.final_block_id.as_ref(), Some(&b));
+        assert!(back.completeness.block_body_stored);
+        assert_eq!(db.read_block(&b).unwrap().unwrap().status, BlockStatus::Final);
+    }
+
+    /// Local holds block X, peer says miss, and the next block's parent
+    /// is the block *before* our slot: X was never final.
+    #[test]
+    fn arbiter_adopts_miss_when_chain_skips_local_block() {
+        use crate::ids::mk_test_block_id;
+        let (db, _dir, sse) = open_db();
+        let prev = mk_test_block_id(398);
+        let x = mk_test_block_id(400);
+        let z = mk_test_block_id(402);
+
+        write_final_with_body(&db, Slot::new(398, 0), mk_block(prev.clone(), Slot::new(398, 0), vec![], vec![]));
+        write_final_with_body(&db, Slot::new(400, 0), mk_block(x.clone(), Slot::new(400, 0), vec![prev.clone()], vec![]));
+        write_final_with_body(&db, Slot::new(401, 0), mk_block(z, Slot::new(401, 0), vec![prev.clone()], vec![]));
+
+        let mut resp = fresh_resp(400, 0);
+        resp.is_miss = true;
+        let out = apply_peer_patch(&db, &sse, &resp, 9).unwrap();
+        assert!(out.divergence_repaired);
+        let back = db.read_slot(400, 0).unwrap().unwrap();
+        assert!(back.is_miss);
+        assert!(back.final_block_id.is_none());
+        assert_eq!(db.read_block(&x).unwrap().unwrap().status, BlockStatus::Discarded);
+    }
+
+    /// No later block to consult → inconclusive → local kept, nothing
+    /// rewritten.
+    #[test]
+    fn arbiter_inconclusive_keeps_local() {
+        use crate::ids::mk_test_block_id;
+        let (db, _dir, sse) = open_db();
+        let slot = Slot::new(500, 0);
+        let x = mk_test_block_id(500);
+        let y = mk_test_block_id(501);
+        write_final_with_body(&db, slot, mk_block(x.clone(), slot, vec![], vec![]));
+
+        let mut resp = fresh_resp(500, 0);
+        resp.final_block_id = y.to_string();
+        let out = apply_peer_patch(&db, &sse, &resp, 9).unwrap();
+        assert!(out.divergence_kept_local);
+        assert_eq!(
+            arbitrate_verdicts(&db, slot, &Verdict::Block(x.clone()), &Verdict::Block(y)).unwrap(),
+            Arbitration::Inconclusive
+        );
+        let back = db.read_slot(500, 0).unwrap().unwrap();
+        assert_eq!(back.final_block_id.as_ref(), Some(&x));
     }
 }

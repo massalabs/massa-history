@@ -165,6 +165,25 @@ message FinalSlotResponse {
   // meaningful if the slot was not a miss. Repeats the `id` field stored
   // inside `block` for convenience.
   string final_block_id = 50;
+
+  // ----- Completeness echo (additive, servers >= 0.0.2) ---------------
+  // `completeness_known` is true when the server filled the three
+  // `has_*` flags from its local `SlotCompleteness`. Older servers leave
+  // every field below at its default, and callers then fall back to the
+  // pre-0.0.2 behaviour (never settle a part on an empty payload).
+  bool completeness_known = 60;
+  // Peer holds the block body for this slot (or the slot is a miss).
+  bool has_block_body = 61;
+  // Peer received the FINAL execution output for this slot from its node
+  // (or a peer that did). An empty `sc_events`/`executed_op_ids` list with
+  // this flag set means "the slot genuinely had no exec payload".
+  bool has_exec_output = 62;
+  // Peer received the FINAL transfer list for this slot. Empty
+  // `transfers` with this flag set means "no transfers in this slot".
+  bool has_transfers = 63;
+  // Echo of the parts mask the server honoured for this response, so the
+  // caller can tell "part not requested" from "part requested and empty".
+  FinalSlotParts parts = 64;
 }
 
 // -----------------------------------------------------------------------

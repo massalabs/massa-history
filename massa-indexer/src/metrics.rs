@@ -9,8 +9,65 @@
 //! (exposition version 0.0.4 — i.e. `TYPE`/`HELP` lines followed by
 //! `metric_name{labels} value` lines terminated with `\n`).
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, AtomicU8, Ordering};
 use std::time::Instant;
+
+/// Node gRPC streams the indexer subscribes to, in the order used by the
+/// per-stream health arrays below.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamKind {
+    Blocks = 0,
+    Exec = 1,
+    Transfers = 2,
+}
+
+impl StreamKind {
+    pub const ALL: [StreamKind; 3] = [StreamKind::Blocks, StreamKind::Exec, StreamKind::Transfers];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            StreamKind::Blocks => "blocks",
+            StreamKind::Exec => "exec",
+            StreamKind::Transfers => "transfers",
+        }
+    }
+}
+
+/// Lifecycle state of one node stream subscription.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum StreamState {
+    /// Not (yet) subscribed — startup, or disabled via `[streams]`.
+    Idle = 0,
+    /// Subscribed and delivering frames.
+    Streaming = 1,
+    /// Connection lost / node down; reconnecting with backoff.
+    Reconnecting = 2,
+    /// The node answered `Unimplemented`: the RPC is missing on this node
+    /// build (e.g. `NewTransfersInfoServer` needs `execution-info`).
+    /// No amount of retrying fixes this — the node must be rebuilt.
+    Unimplemented = 3,
+}
+
+impl StreamState {
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            1 => StreamState::Streaming,
+            2 => StreamState::Reconnecting,
+            3 => StreamState::Unimplemented,
+            _ => StreamState::Idle,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            StreamState::Idle => "idle",
+            StreamState::Streaming => "streaming",
+            StreamState::Reconnecting => "reconnecting",
+            StreamState::Unimplemented => "unimplemented",
+        }
+    }
+}
 
 /// Global metrics snapshot, shared between the ingest workers, the REST
 /// layer and the `/metrics` handler. Cheap to clone: every counter is an
@@ -42,11 +99,37 @@ pub struct Metrics {
     pub backfill_passes_total: AtomicU64,
     /// Bulk `StreamFinalSlots` range calls issued (subset of rpcs_total).
     pub backfill_range_streams_total: AtomicU64,
+    /// Slots handed to peers because their `Candidate` row went stale
+    /// (restart hole), because a FINAL miss had a candidate body, because
+    /// a recent FINAL slot lacked parts, or because of a recheck range.
+    pub backfill_stale_candidates_total: AtomicU64,
+    pub backfill_suspicious_misses_total: AtomicU64,
+    pub backfill_recent_incomplete_total: AtomicU64,
+    pub backfill_recheck_total: AtomicU64,
+
+    // Peer patch outcomes.
+    /// Local non-FINAL rows promoted to FINAL by a peer patch.
+    pub peer_promoted_final_total: AtomicU64,
+    /// Divergent FINAL verdicts (block / miss) repaired by chain linkage.
+    pub peer_divergence_repaired_total: AtomicU64,
+    /// Divergent FINAL verdicts seen but left as-is (local confirmed or
+    /// linkage inconclusive).
+    pub peer_divergence_kept_local_total: AtomicU64,
+
+    // One-shot repair tasks (see `crate::repair`).
+    pub repair_slots_scanned_total: AtomicU64,
+    pub repair_transfers_reconstructed_total: AtomicU64,
+    pub repair_pull_slots_applied_total: AtomicU64,
 
     // Legacy DDB fallback counters.
     pub legacy_ddb_rpcs_total: AtomicU64,
     pub legacy_ddb_slots_filled_total: AtomicU64,
     pub legacy_ddb_errors_total: AtomicU64,
+
+    // Node stream health, indexed by `StreamKind as usize`.
+    stream_state: [AtomicU8; 3],
+    stream_last_event_ms: [AtomicI64; 3],
+    stream_enabled: [AtomicU8; 3],
 }
 
 impl Default for Metrics {
@@ -69,15 +152,73 @@ impl Default for Metrics {
             backfill_slots_filled_total: AtomicU64::new(0),
             backfill_passes_total: AtomicU64::new(0),
             backfill_range_streams_total: AtomicU64::new(0),
+            backfill_stale_candidates_total: AtomicU64::new(0),
+            backfill_suspicious_misses_total: AtomicU64::new(0),
+            backfill_recent_incomplete_total: AtomicU64::new(0),
+            backfill_recheck_total: AtomicU64::new(0),
+            peer_promoted_final_total: AtomicU64::new(0),
+            peer_divergence_repaired_total: AtomicU64::new(0),
+            peer_divergence_kept_local_total: AtomicU64::new(0),
+            repair_slots_scanned_total: AtomicU64::new(0),
+            repair_transfers_reconstructed_total: AtomicU64::new(0),
+            repair_pull_slots_applied_total: AtomicU64::new(0),
             legacy_ddb_rpcs_total: AtomicU64::new(0),
             legacy_ddb_slots_filled_total: AtomicU64::new(0),
             legacy_ddb_errors_total: AtomicU64::new(0),
+            stream_state: [AtomicU8::new(0), AtomicU8::new(0), AtomicU8::new(0)],
+            stream_last_event_ms: [AtomicI64::new(0), AtomicI64::new(0), AtomicI64::new(0)],
+            stream_enabled: [AtomicU8::new(0), AtomicU8::new(0), AtomicU8::new(0)],
         }
     }
 }
 
+/// Snapshot of one stream's health, as reported by `/v1/health`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StreamHealth {
+    pub kind: StreamKind,
+    pub enabled: bool,
+    pub state: StreamState,
+    /// Wall-clock millis of the last frame received (0 = never).
+    pub last_event_ms: i64,
+}
+
 impl Metrics {
     pub fn new() -> Self { Self::default() }
+
+    /// Mark a stream as configured (subscribed at startup).
+    pub fn stream_set_enabled(&self, kind: StreamKind, enabled: bool) {
+        self.stream_enabled[kind as usize].store(u8::from(enabled), Ordering::Relaxed);
+    }
+
+    pub fn stream_set_state(&self, kind: StreamKind, state: StreamState) {
+        self.stream_state[kind as usize].store(state as u8, Ordering::Relaxed);
+    }
+
+    /// Record a delivered frame (also flips the state to `Streaming`).
+    pub fn stream_event(&self, kind: StreamKind, now_ms: i64) {
+        self.stream_last_event_ms[kind as usize].store(now_ms, Ordering::Relaxed);
+        self.stream_state[kind as usize].store(StreamState::Streaming as u8, Ordering::Relaxed);
+    }
+
+    pub fn stream_health(&self, kind: StreamKind) -> StreamHealth {
+        StreamHealth {
+            kind,
+            enabled: self.stream_enabled[kind as usize].load(Ordering::Relaxed) != 0,
+            state: StreamState::from_u8(self.stream_state[kind as usize].load(Ordering::Relaxed)),
+            last_event_ms: self.stream_last_event_ms[kind as usize].load(Ordering::Relaxed),
+        }
+    }
+
+    /// True when every *enabled* stream is either streaming, or merely
+    /// reconnecting (node restart) — i.e. nothing is structurally broken.
+    /// `Unimplemented` on an enabled stream is a configuration fault that
+    /// silently loses data and therefore makes the process "degraded".
+    pub fn streams_degraded(&self) -> bool {
+        StreamKind::ALL.iter().any(|k| {
+            let h = self.stream_health(*k);
+            h.enabled && h.state == StreamState::Unimplemented
+        })
+    }
 
     /// Render the Prometheus text exposition. Deliberately cheap — called on
     /// every `/metrics` scrape (typically once per 15 s).
@@ -153,6 +294,65 @@ impl Metrics {
         counter(&mut out, "massa_indexer_backfill_range_streams_total",
             "Bulk StreamFinalSlots range calls issued by the backfill worker.",
             self.backfill_range_streams_total.load(Ordering::Relaxed));
+        counter(&mut out, "massa_indexer_backfill_stale_candidates_total",
+            "Stale Candidate rows (restart holes) handed to peers for a FINAL verdict.",
+            self.backfill_stale_candidates_total.load(Ordering::Relaxed));
+        counter(&mut out, "massa_indexer_backfill_suspicious_misses_total",
+            "FINAL miss rows with a seen block body re-offered to peers.",
+            self.backfill_suspicious_misses_total.load(Ordering::Relaxed));
+        counter(&mut out, "massa_indexer_backfill_recent_incomplete_total",
+            "Recent FINAL slots re-asked for missing exec/transfers parts.",
+            self.backfill_recent_incomplete_total.load(Ordering::Relaxed));
+        counter(&mut out, "massa_indexer_backfill_recheck_total",
+            "Slots re-queried because of an operator recheck range.",
+            self.backfill_recheck_total.load(Ordering::Relaxed));
+
+        // Peer patch outcomes.
+        counter(&mut out, "massa_indexer_peer_promoted_final_total",
+            "Local non-FINAL slot rows promoted to FINAL by a peer patch.",
+            self.peer_promoted_final_total.load(Ordering::Relaxed));
+        counter(&mut out, "massa_indexer_peer_divergence_repaired_total",
+            "Divergent FINAL verdicts repaired using chain linkage.",
+            self.peer_divergence_repaired_total.load(Ordering::Relaxed));
+        counter(&mut out, "massa_indexer_peer_divergence_kept_local_total",
+            "Divergent FINAL verdicts where the local view was kept.",
+            self.peer_divergence_kept_local_total.load(Ordering::Relaxed));
+
+        // Repair tasks.
+        counter(&mut out, "massa_indexer_repair_slots_scanned_total",
+            "Slots examined by one-shot repair tasks.",
+            self.repair_slots_scanned_total.load(Ordering::Relaxed));
+        counter(&mut out, "massa_indexer_repair_transfers_reconstructed_total",
+            "Transfer rows reconstructed locally from executed operations.",
+            self.repair_transfers_reconstructed_total.load(Ordering::Relaxed));
+        counter(&mut out, "massa_indexer_repair_pull_slots_applied_total",
+            "Slots whose missing parts were pulled from peers by a repair range.",
+            self.repair_pull_slots_applied_total.load(Ordering::Relaxed));
+
+        // Node stream health.
+        push_help(&mut out, "massa_indexer_stream_state",
+            "Node stream state: 0 idle, 1 streaming, 2 reconnecting, 3 unimplemented.");
+        push_type(&mut out, "massa_indexer_stream_state", "gauge");
+        for k in StreamKind::ALL {
+            let h = self.stream_health(k);
+            out.push_str(&format!(
+                "massa_indexer_stream_state{{stream=\"{}\",enabled=\"{}\"}} {}\n",
+                k.label(),
+                h.enabled,
+                h.state as u8
+            ));
+        }
+        push_help(&mut out, "massa_indexer_stream_last_event_ms",
+            "Wall-clock millis of the last frame received per node stream (0 = never).");
+        push_type(&mut out, "massa_indexer_stream_last_event_ms", "gauge");
+        for k in StreamKind::ALL {
+            let h = self.stream_health(k);
+            out.push_str(&format!(
+                "massa_indexer_stream_last_event_ms{{stream=\"{}\"}} {}\n",
+                k.label(),
+                h.last_event_ms
+            ));
+        }
 
         // Legacy DDB fallback.
         counter(&mut out, "massa_indexer_legacy_ddb_rpcs_total",
@@ -235,5 +435,27 @@ mod tests {
     #[test]
     fn escape_label_handles_quotes_and_backslashes() {
         assert_eq!(escape_label("a\"b\\c\nd"), "a\\\"b\\\\c\\nd");
+    }
+
+    #[test]
+    fn stream_health_tracks_state_and_degradation() {
+        let m = Metrics::new();
+        m.stream_set_enabled(StreamKind::Transfers, true);
+        m.stream_set_enabled(StreamKind::Blocks, true);
+        assert!(!m.streams_degraded(), "idle streams are not degraded");
+        m.stream_event(StreamKind::Blocks, 1_000);
+        assert_eq!(m.stream_health(StreamKind::Blocks).state, StreamState::Streaming);
+        assert_eq!(m.stream_health(StreamKind::Blocks).last_event_ms, 1_000);
+
+        m.stream_set_state(StreamKind::Transfers, StreamState::Unimplemented);
+        assert!(m.streams_degraded(), "an enabled Unimplemented stream degrades health");
+
+        // A disabled stream never degrades health, whatever its state.
+        m.stream_set_enabled(StreamKind::Transfers, false);
+        assert!(!m.streams_degraded());
+
+        let s = m.render("v", "n");
+        assert!(s.contains("massa_indexer_stream_state{stream=\"transfers\",enabled=\"false\"} 3"));
+        assert!(s.contains("massa_indexer_stream_last_event_ms{stream=\"blocks\"} 1000"));
     }
 }

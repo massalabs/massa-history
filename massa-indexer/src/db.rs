@@ -1860,6 +1860,22 @@ impl Db {
         Ok(self.inner.get_cf(self.cf(cf)?, key)?)
     }
 
+    /// Small UTF-8 bookkeeping value under `cf_meta` (repair checkpoints,
+    /// …). Keys are namespaced by the caller (`repair:…`) and never
+    /// collide with the fixed [`meta_keys`].
+    pub fn meta_get_str(&self, key: &str) -> Result<Option<String>> {
+        Ok(self
+            .inner
+            .get_cf(self.cf(CF_META)?, key.as_bytes())?
+            .map(|v| String::from_utf8_lossy(&v).into_owned()))
+    }
+
+    pub fn meta_put_str(&self, key: &str, value: &str) -> Result<()> {
+        self.inner
+            .put_cf(self.cf(CF_META)?, key.as_bytes(), value.as_bytes())?;
+        Ok(())
+    }
+
     /// Iterate raw `(key, value)` pairs from a CF, optionally restricted to
     /// keys with a given hex `prefix` and resumed past `after`. Capped at
     /// `limit` rows. The trailing key is returned as the next cursor when

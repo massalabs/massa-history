@@ -367,6 +367,15 @@ pub(crate) fn build_final_slot_response_from_state(
             .as_ref()
             .map(|b| b.to_string())
             .unwrap_or_default(),
+        // Completeness echo (additive fields). Lets the receiver settle
+        // its own flags on an *empty* part — "peer has the FINAL exec
+        // output and it is empty" is a fact, not a gap — and tell "not
+        // requested" apart from "requested, nothing there".
+        completeness_known: true,
+        has_block_body: state.is_miss || state.completeness.block_body_stored,
+        has_exec_output: state.completeness.exec_output_final,
+        has_transfers: state.completeness.transfers_stored,
+        parts: Some(*parts),
         ..Default::default()
     };
 

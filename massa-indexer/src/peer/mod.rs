@@ -18,6 +18,8 @@ pub mod session;
 
 pub use backfill::{run_backfill, BackfillConfig};
 pub use client::{LocalPeerIdentity, PeerHandle, PeerPool};
-pub use patch::{apply_legacy_patch, apply_peer_patch, ensure_parent_stub, PatchOutcome};
+pub use patch::{
+    apply_legacy_patch, apply_peer_patch, ensure_parent_stub, Arbitration, PatchOutcome,
+};
 pub use registry::PeerRegistry;
 pub use service::{serve_peer, PeerService};

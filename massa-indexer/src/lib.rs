@@ -23,6 +23,7 @@ pub mod grpc;
 pub mod legacy;
 pub mod metrics;
 pub mod peer;
+pub mod repair;
 pub mod openapi;
 pub mod rest;
 pub mod sse;

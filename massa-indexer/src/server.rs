@@ -133,8 +133,9 @@ pub async fn run(config: Config) -> Result<()> {
         transfers = streams_cfg.transfers,
         "stream subscriptions configured"
     );
+    let grpc_metrics = metrics.clone();
     tokio::spawn(async move {
-        run_consumers(grpc_url, conn_timeout, grpc_tx, streams_cfg).await;
+        run_consumers(grpc_url, conn_timeout, grpc_tx, streams_cfg, Some(grpc_metrics)).await;
     });
 
     // Peer server (§8) — optional. A misconfigured / failing peer layer
@@ -190,6 +191,7 @@ pub async fn run(config: Config) -> Result<()> {
     // `last_final_slot` → (0,0) and asks each logical peer_id at most
     // once per slot. Starts even with an empty static peer list so a
     // remote that dials us can still feed reverse pulls via SyncSession.
+    let mut peer_pool: Option<PeerPool> = None;
     if config.peer.enabled {
         let peer_cfgs: Vec<PeerClientConfig> = config
             .peer
@@ -229,6 +231,9 @@ pub async fn run(config: Config) -> Result<()> {
             },
             expected_streams: config.streams.expected(),
             thread_count: 32,
+            stale_candidate_periods: config.peer.stale_candidate_periods,
+            recent_incomplete_periods: config.peer.recent_incomplete_periods,
+            recheck_ranges: config.repair.recheck_periods.clone(),
             // Bulk catch-up tunables (range streaming + receive pacing);
             // defaults are production-safe, see BackfillConfig docs.
             ..BackfillConfig::default()
@@ -236,11 +241,56 @@ pub async fn run(config: Config) -> Result<()> {
         let db_for_bf = db.clone();
         let tx_for_bf = tx.clone();
         let m_for_bf = metrics.clone();
+        let bf_pool = pool.clone();
         tokio::spawn(async move {
-            run_backfill(db_for_bf, pool, tx_for_bf, backfill_cfg, Some(m_for_bf)).await;
+            run_backfill(db_for_bf, bf_pool, tx_for_bf, backfill_cfg, Some(m_for_bf)).await;
         });
+        peer_pool = Some(pool);
     } else {
         info!("backfill worker skipped (peer layer disabled)");
+    }
+
+    // One-shot repair tasks (`[repair]`, see `crate::repair`). Ranges with
+    // `to_period = 0` resolve to the FINAL head at startup.
+    let head_now = db.read_last_final_slot()?.map(|s| s.period).unwrap_or(0);
+    let meta_now = db.read_meta()?;
+    if config.repair.reconstruct_transfers.enabled {
+        let rt = &config.repair.reconstruct_transfers;
+        let to = if rt.to_period == 0 { head_now } else { rt.to_period };
+        let rcfg = crate::repair::ReconstructConfig {
+            from_period: rt.from_period,
+            to_period: to,
+            thread_count: meta_now.as_ref().map(|m| m.thread_count).unwrap_or(32),
+            genesis_timestamp_ms: meta_now.as_ref().map(|m| m.genesis_timestamp_ms).unwrap_or(0),
+            t0_ms: meta_now.as_ref().map(|m| m.t0_ms).unwrap_or(16_000),
+        };
+        let (db_r, tx_r, m_r) = (db.clone(), tx.clone(), metrics.clone());
+        tokio::spawn(async move {
+            crate::repair::run_reconstruct_transfers(db_r, tx_r, rcfg, Some(m_r)).await;
+        });
+    }
+    if config.repair.pull_parts.enabled {
+        match peer_pool.clone() {
+            Some(pool) => {
+                let pp = &config.repair.pull_parts;
+                let to = if pp.to_period == 0 { head_now } else { pp.to_period };
+                let pcfg = crate::repair::PullPartsConfig {
+                    from_period: pp.from_period,
+                    to_period: to,
+                    parts: FinalSlotParts {
+                        block: pp.block,
+                        exec_output: pp.exec_output,
+                        transfers: pp.transfers,
+                    },
+                    thread_count: 32,
+                };
+                let (db_p, tx_p, m_p) = (db.clone(), tx.clone(), metrics.clone());
+                tokio::spawn(async move {
+                    crate::repair::run_pull_parts(db_p, pool, tx_p, pcfg, Some(m_p)).await;
+                });
+            }
+            None => warn!("[repair.pull_parts] enabled but the peer layer is disabled; skipping"),
+        }
     }
 
     // AWS DDB **one-shot importer** (§9). When `[legacy_ddb] enabled
