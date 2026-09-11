@@ -477,15 +477,31 @@ is missing.
 ### 8.1 First-final-wins
 
 The first FINAL verdict for a slot — from either the local node or a peer
-— is committed and never overwritten by a later FINAL with a different
-`execution_trail_hash`. A disagreeing FINAL is logged (`WARN`) and
-counted in metrics. Rationale: any FINAL source is already authoritative
-per Massa's consensus finality; if two disagree, flipping state helps no
-one, and operators can inspect the divergence log.
+— is committed and never overwritten by a later FINAL that merely
+carries a different `execution_trail_hash` for the **same** block. A
+disagreeing trail hash is logged (`WARN`) and counted in metrics.
+Rationale: any FINAL source is already authoritative per Massa's
+consensus finality.
+
+**Exception — different verdicts.** When a peer names a *different
+final block* (or says miss where we hold a block, or vice versa), one
+of the two nodes finalised a dead fork — this happened at the MAIN.5.0
+upgrade with mixed node versions. That is settled by chain linkage,
+not by precedence: every block header names its parent per thread, so
+the first later FINAL block in the thread (or, for a multi-period fork
+segment, the block at which the real chain rejoins) proves which
+verdict is on the canonical chain. The proven-wrong verdict is
+replaced, the superseded block is marked `Discarded`, and the slot is
+rebuilt from the peer's parts. Local data is kept whenever linkage is
+inconclusive. See `peer::patch::arbitrate_verdicts` and
+ARCHITECTURE.md §8.6.
 
 Partial data is acceptable: a slot can be marked FINAL before its
 transfers arrive; those parts are filled later and tracked by
-`SlotCompleteness`.
+`SlotCompleteness`. A `Candidate` row more than
+`peer.stale_candidate_periods` behind the FINAL head is a restart hole
+(node streams never replay) and is finalised from peers — see
+ARCHITECTURE.md §8.5.
 
 ### 8.2 Block lifecycle
 

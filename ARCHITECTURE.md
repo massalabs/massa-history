@@ -11,8 +11,10 @@ explorer stack. It covers:
 5. Day-2 operations (logs, restarts, upgrades, troubleshooting).
 6. Disposable indexer DB / failure recovery.
 7. What is intentionally not in this deployment.
-8. Indexer-to-indexer peer sync (gap-fill on restarts).
+8. Indexer-to-indexer peer sync (gap-fill on restarts, convergence
+   rules, FINAL-verdict arbitration, stream health).
 9. Legacy block-storer (DynamoDB) one-shot importer.
+10. One-shot repairs (`[repair]`) and the 2026‑09‑11 remediation.
 
 The companion documents are:
 
@@ -57,11 +59,12 @@ Current live hosts:
 | `indexer2` | `192.168.0.29` (LAN)            | LAN only                       | full node + indexer + explorer |
 | `indexer3` | `86.205.18.20` (off-site)       | SSH `damip@… -p 2222`          | full node + indexer + explorer |
 
-`indexer1` and `indexer2` share a LAN and can peer with each other today.
-`indexer3` was moved off-site; public peer/API ports are not yet open, so
-cross-site indexer peer sync (`:9443`) and LAN→unit3 reachability are
-**pending** operator firewall work. Until then each site runs independently
-from its own node; no data is deleted while connectivity is restored.
+`indexer1` and `indexer2` share a LAN and peer with each other directly.
+`indexer3` is off-site; since 2026‑09‑11 its WAN `:2222` (SSH) and
+`:9443` (peer gRPC) are forwarded, so it peers with `indexer1`
+(`http://78.194.186.228:9443`) in both directions and `indexer2` reaches
+it through the SyncSession `indexer1` relays. `:8080` (REST) is not
+exposed on the WAN; query it over SSH.
 
 On the LAN, each box is reachable as `http://<ip>/` from a browser.
 
@@ -1260,6 +1263,109 @@ node DB is durable on its own).
   fastest way to see who connected to whom and how many slots were
   filled in the last minute.
 
+### 8.5 Convergence rules — what the walker asks peers for
+
+Node broadcast streams (`NewFilledBlocks`, `NewSlotExecutionOutputs`,
+`NewTransfersInfo`) do **not** replay across a reconnect. Every
+indexer *or node* restart therefore leaves a hole: slots whose block
+body arrived live but whose FINAL execution output landed during the
+outage stay `Candidate` forever unless a peer supplies the verdict.
+Until 2026‑09‑11 the walker skipped every `Candidate` row ("the live
+stream is still settling it"), which left ~250 k such slots per host.
+The predicate in `peer/backfill.rs::needs_fetch` is now:
+
+| Local row                                   | Action                                         | Metric                              |
+|---------------------------------------------|------------------------------------------------|-------------------------------------|
+| no row / `Unknown` stub                     | ask for every enabled part                     | (gap)                               |
+| `Candidate`, `head − period < 64`           | skip — live stream owns it                     |                                     |
+| `Candidate`, `head − period ≥ 64`           | **stale**: ask for every enabled part          | `backfill_stale_candidates_total`   |
+| `Final`, not a miss, no block body          | ask for every enabled part                     | (gap)                               |
+| `Final` miss **with** candidate block ids   | **suspicious**: ask for every part (arbiter)   | `backfill_suspicious_misses_total`  |
+| `Final`, body present, exec/transfers part missing, `head − period ≤ 1350` | ask only for the missing parts | `backfill_recent_incomplete_total` |
+| `Final` inside a `[repair] recheck_periods` range | ask for every part (first 3 sweeps)      | `backfill_recheck_total`            |
+| anything else                               | skip                                           |                                     |
+
+Both thresholds are `[peer] stale_candidate_periods` (default 64 ≈
+17 min; finality lands within ~2 periods) and
+`[peer] recent_incomplete_periods` (default 1350 ≈ 6 h). Deep history
+is never re-asked for missing exec/transfers every sweep — that is
+what once kept the walker from reaching genesis; use
+`[repair.pull_parts]` for a bounded historical range instead.
+
+**Following peers' head.** The sweep starts at the highest FINAL period
+any configured peer advertises in `GetHealth` (capped at local head +
+50 000) rather than at the local head, so an indexer whose node is
+down or bootstrapping keeps advancing its tip through the mesh instead
+of serving a stale one.
+
+**Completeness echo.** `FinalSlotResponse` carries
+`completeness_known / has_block_body / has_exec_output /
+has_transfers` and echoes the honoured `parts` mask (fields 60‑64,
+additive). A ≥ 0.0.2 peer that honoured the exec part and holds the
+FINAL exec output lets the receiver settle `exec_output_final` even
+when the payload is empty ("no events in this slot" is a fact);
+likewise for transfers. Old peers leave the fields unset and the
+receiver falls back to "payload present ⇒ applied". This is what makes
+rolling upgrades safe: any mix of versions interoperates, newer pairs
+just converge faster.
+
+**Peer patches finish the job.** When a patch promotes a stale
+`Candidate` to FINAL the local block rows are settled
+(winner → `final`, others → `discarded`) and operation rows that
+already exist locally get their `final_exec_status` merged from the
+peer's rows. When the node's own FINAL exec arrives for a slot a peer
+finalised first (head race), the exec part is applied instead of
+dropped, provided the node names the same block.
+
+### 8.6 Divergent FINAL verdicts — chain-linkage arbiter
+
+At the MAIN.5.0 upgrade (2026‑05‑17 18:30 UTC, periods 4608113‑4608117)
+nodes on the two protocol versions finalised **different blocks** for
+the same slots; each indexer recorded what its node said and
+first‑final‑wins kept it forever. Peers cannot outvote each other
+(they may have copied from one another), but the chain can settle it:
+every block header names its parent in each thread.
+
+`peer/patch.rs::arbitrate_verdicts` runs when a peer's FINAL verdict
+(block id, or miss) differs from the local one:
+
+1. the first later FINAL block in the thread names its parent — if
+   that is the peer's block (or skips ours onto the previous block)
+   the peer is right; if it is ours, we are;
+2. a node that finalised a fork for several periods leaves a
+   *self-consistent* segment, so (1) cannot see it. The walker looks
+   further ahead for a **broken link** — a block whose parent is not
+   the block our own rows name before it. That rejoin block's parent
+   is the "anchor" the real chain continues from; every local block
+   between the last consistent block and the rejoin is dead. Peer
+   verdicts inside the segment are adopted when they say miss, name
+   the anchor, or name an ancestor of the anchor through bodies we
+   hold. Verdicts are applied newest-first (that is the order the
+   range stream delivers), so the rejoin block is adopted before the
+   slots below it.
+
+Adopting rewrites the slot (verdict, trail hash, completeness reset),
+marks the superseded local block `discarded`, clears the slot's
+events/transfers and re-applies the peer's parts. Metrics:
+`peer_divergence_repaired_total` / `peer_divergence_kept_local_total`.
+Slots whose true block body no indexer ever received (block `B12ZVQ…`
+at (4608113, 3) and a few siblings) stay `final` with
+`block_body_stored = false`; the verdict is right and the body is
+unrecoverable (the legacy storer has no rows for that minute either).
+
+### 8.7 Node stream health
+
+`/v1/health` reports `status: "degraded"` (HTTP 200) and a per-stream
+`state` — `idle | streaming | reconnecting | unimplemented` — plus
+`last_event_ms`. `unimplemented` means the node answered
+`Unimplemented` for an enabled stream: the node binary lacks the
+feature (`NewTransfersInfoServer` needs `--features execution-info`)
+and no retry will fix it. The WARN is repeated every 5 minutes and
+`massa_indexer_stream_state{stream=…}` exposes the same in Prometheus.
+From 2026‑05‑17 to 2026‑09‑11 every node in the cluster ran a MAIN.5.0
+binary built with default features; the indexers warned once per
+reconnect and nothing else noticed. See §10.
+
 ---
 
 ## 9. Legacy block-storer (DynamoDB) one-shot importer
@@ -1694,3 +1800,63 @@ range. Use the `min_period` / `max_period` knobs:
 periods — typically ≪ $1 of DDB charges. Far cheaper than letting
 the importer restart from head and re-walking every already-imported
 slot.
+
+---
+
+## 10. One-shot repairs (`[repair]`) and the 2026‑09‑11 remediation
+
+`[repair]` in `indexer.toml` drives three targeted, idempotent tools
+(`src/repair.rs`). All of them resume from `cf_meta` checkpoints, log
+`COMPLETE` when done, and are then safe to disable (leaving them
+enabled is harmless — they exit immediately on the next start).
+
+```toml
+[repair]
+# FINAL slots in these inclusive period ranges are re-offered to peers
+# during the first 3 sweeps after startup so the arbiter (§8.6) can
+# settle divergent verdicts.
+recheck_periods = [[4608110, 4608120]]
+
+# Rebuild exact op-derived transfers (Transaction amounts of
+# successfully executed ops) for FINAL slots that never received the
+# node's transfer list. Never invents rewards / fees / SC-internal
+# movements; `transfers_stored` stays false so a real list still wins.
+[repair.reconstruct_transfers]
+enabled = false
+from_period = 4608114
+to_period = 0            # 0 = FINAL head at startup
+
+# Pull the selected parts for FINAL slots lacking them from peers, one
+# descending pass via StreamFinalSlots. Used after a node rebuild on one
+# host to copy its transfers to hosts whose node lacked the stream.
+[repair.pull_parts]
+enabled = false
+from_period = 5239150
+to_period = 0
+transfers = true
+```
+
+Progress: `massa_indexer_repair_*` counters and the `repair` object in
+`/v1/backfill/status` (which no longer scans `cf_slot`).
+
+### 10.1 What was wrong on 2026‑09‑11 and what was done
+
+| Finding | Cause | Fix / recovery |
+|---|---|---|
+| ~250 k (idx1), ~224 k (idx3), ~43 k (idx2) slots stuck `Candidate` | walker skipped every `Candidate`; streams do not replay across restarts | §8.5 predicate; all healed by the first sweep after deploy (`peer_promoted_final_total`) |
+| No transfers indexed since 2026‑05‑17 18:30 UTC (period 4608114) | all three `massa-node` binaries rebuilt for MAIN.5.0 with default features → `NewTransfersInfoServer` `Unimplemented`; indexer warned once | nodes rebuilt with `--features execution-info` one at a time (idx3 → idx1 → idx2); live transfers flow again on all hosts; `[repair.reconstruct_transfers]` rebuilt 2 196 exact `Transaction` movements per host over the gap; `[repair.pull_parts]` copied the inter-rebuild window. Rewards, fees and SC-internal transfers for 2026‑05‑17 → 2026‑09‑11 are **not recoverable** (the node cannot replay them; the legacy DDB storer has only sparse `_N` rows). |
+| Divergent FINAL verdicts at 4608113‑4608117 | mixed node versions at the upgrade minute; first‑final‑wins | §8.6 arbiter + `recheck_periods`; idx1 held the real chain, idx2 adopted it, idx3's 5‑period dead fork unwound |
+| Peer-filled slots left `exec_output_final`/`transfers_stored` false, blocks `seen_candidate`, ops without final status | empty parts never settled; patch did not touch existing rows | completeness echo (§8.5), finality + op-status merge in `apply_peer_patch` |
+| Indexer RSS 12‑15 GB + 8 GB swap per host | RocksDB `max_open_files = -1` pinned ~70 k table readers | shared 2 GiB block cache, `max_open_files = 8192`, global memtable cap; ~1‑3 GB RSS now (no SST rewrite) |
+| `/v1/backfill/status` decoded all 170 M `cf_slot` rows per call, publicly | | counters only |
+
+Operational rules that fall out of this:
+
+- **Never build the node without `--features execution-info`.**
+  `/v1/health` now says `degraded` / `transfers: unimplemented` if it
+  happens; check it after every node deploy.
+- Restart one indexer at a time; the others keep the tip and the
+  restarted one converges through the mesh (including its tip, §8.5).
+- After a node restart, expect `stale_candidates_total` to rise on
+  that host during the next sweep and `peer_promoted_final_total` to
+  follow it — that is the hole being healed.
