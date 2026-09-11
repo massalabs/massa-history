@@ -29,9 +29,11 @@ use crate::{
     Error, Result,
 };
 use rocksdb::{
-    ColumnFamilyDescriptor, Direction, IteratorMode, Options, WriteBatch, DB,
+    BlockBasedOptions, Cache, ColumnFamilyDescriptor, Direction, IteratorMode, Options,
+    WriteBatch, DB,
 };
 use std::{path::Path, sync::Arc};
+use tracing::info;
 
 // ---------------------------------------------------------------------------
 // column families
@@ -236,27 +238,60 @@ pub struct Db {
 impl Db {
     /// Open (or create) a RocksDB at `path` with all our column families.
     ///
-    /// We deliberately rely on RocksDB defaults for compression, write-buffer
-    /// size and block-cache: tuning those knobs well requires workload-specific
-    /// benchmarking we haven't done, and the out-of-the-box defaults are a
-    /// sensible starting point for archival workloads. Operators who want to
-    /// experiment can fork and set these directly.
+    /// Memory knobs below are **runtime-only**. They do not rewrite SST files
+    /// and do not change the on-disk row codec, so an existing archival DB
+    /// opens as-is. Compression is intentionally left unset: production
+    /// files were written with `NoCompression`, and flipping that would
+    /// mix codecs on the next compaction.
     ///
-    /// `_compression` and `_write_buffer_mb` are kept in the signature so the
-    /// config surface stays stable; they are currently ignored. When we
-    /// re-introduce tuning, this is the one place that needs to read them.
-    pub fn open(path: impl AsRef<Path>, _compression: &str, _write_buffer_mb: u64) -> Result<Self> {
+    /// `_compression` stays in the signature for config-surface stability
+    /// and is ignored on purpose.
+    pub fn open(path: impl AsRef<Path>, _compression: &str, write_buffer_mb: u64) -> Result<Self> {
+        // Shared, evictable cache for data + index + filter blocks. Default
+        // RocksDB keeps a separate 8 MiB cache *and* a resident table-reader
+        // (index/filter never evicted) per CF — with ~70k SST files that
+        // pinned ~20 GiB of anonymous RSS on the 32 GiB production boxes.
+        const BLOCK_CACHE_BYTES: usize = 2 * 1024 * 1024 * 1024;
+        // Finite table-cache so we stop holding every SST fd/reader forever
+        // (`max_open_files = -1` is what produced 70k open `.sst` fds).
+        const MAX_OPEN_FILES: i32 = 8192;
+        // Global memtable cap across all 31 CFs. Without this, each CF can
+        // hold `write_buffer_size` independently (up to several GiB).
+        const DB_WRITE_BUFFER_BYTES: usize = 512 * 1024 * 1024;
+
+        let write_buffer_bytes = (write_buffer_mb.max(4) as usize).saturating_mul(1024 * 1024);
+
+        let cache = Cache::new_lru_cache(BLOCK_CACHE_BYTES);
+        let mut block_opts = BlockBasedOptions::default();
+        block_opts.set_block_cache(&cache);
+        block_opts.set_cache_index_and_filter_blocks(true);
+        block_opts.set_pin_l0_filter_and_index_blocks_in_cache(true);
+
         let mut db_opts = Options::default();
         db_opts.create_if_missing(true);
         db_opts.create_missing_column_families(true);
-        // Parallelism is a pure-CPU knob; safe to tune independently from the
-        // storage-format knobs we're leaving at defaults.
         db_opts.increase_parallelism(num_cpus().min(8) as i32);
+        db_opts.set_max_open_files(MAX_OPEN_FILES);
+        db_opts.set_db_write_buffer_size(DB_WRITE_BUFFER_BYTES);
+        db_opts.set_block_based_table_factory(&block_opts);
+
+        let mut cf_opts = Options::default();
+        cf_opts.set_write_buffer_size(write_buffer_bytes);
+        cf_opts.set_block_based_table_factory(&block_opts);
 
         let cf_descs: Vec<ColumnFamilyDescriptor> = ALL_CFS
             .iter()
-            .map(|name| ColumnFamilyDescriptor::new(*name, Options::default()))
+            .map(|name| ColumnFamilyDescriptor::new(*name, cf_opts.clone()))
             .collect();
+
+        info!(
+            path = %path.as_ref().display(),
+            write_buffer_mb,
+            block_cache_mb = BLOCK_CACHE_BYTES / (1024 * 1024),
+            db_write_buffer_mb = DB_WRITE_BUFFER_BYTES / (1024 * 1024),
+            max_open_files = MAX_OPEN_FILES,
+            "opening RocksDB (memory caps only; compression unchanged)"
+        );
 
         let db = DB::open_cf_descriptors(&db_opts, path.as_ref(), cf_descs)?;
         let inner = Arc::new(db);
@@ -2211,6 +2246,21 @@ mod tests {
         let read = db.read_slot(42, 7).unwrap().unwrap();
         assert_eq!(read.slot.period, 42);
         assert_eq!(read.status, SlotStatus::Unknown);
+    }
+
+    /// Memory-cap options must reopen an existing directory without
+    /// rewriting files or losing rows (production DBs are archival).
+    #[test]
+    fn reopen_keeps_existing_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let db = Db::open(dir.path(), "lz4", 4).unwrap();
+            db.write_slot(&SlotState::fresh(Slot::new(99, 3), 1)).unwrap();
+        }
+        let db = Db::open(dir.path(), "lz4", 4).unwrap();
+        let read = db.read_slot(99, 3).unwrap().unwrap();
+        assert_eq!(read.slot.period, 99);
+        assert_eq!(read.slot.thread, 3);
     }
 
     #[test]

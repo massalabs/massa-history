@@ -265,9 +265,12 @@ One RocksDB instance per indexer. Opened via `Db::open` in `src/db.rs`
 with:
 
 - `create_if_missing = true`, `create_missing_column_families = true`
-- **Default compression.** We don't set `compression_type`; upgrading the
-  `rocksdb` crate picks up whatever the project settled on.
-- `write_buffer_size = [db].write_buffer_size_mb × 1 MiB`
+- **Compression left unset** so existing `NoCompression` SST files are
+  not rewritten. Do not flip this on a live archival DB.
+- `write_buffer_size = [db].write_buffer_size_mb × 1 MiB` (per CF)
+- `db_write_buffer_size = 512 MiB` (global memtable cap across all CFs)
+- shared 2 GiB LRU block cache, `cache_index_and_filter_blocks = true`
+- `max_open_files = 8192` (not `-1`; that pinned every SST table-reader)
 - `increase_parallelism(min(cpu, 8))`
 
 All values are `prost`-encoded against the `*Pb` messages in
@@ -1185,11 +1188,12 @@ Releases that bump `SCHEMA_VERSION` are called out in `CHANGELOG.md`.
 ### 16.2 Global allocator
 
 `tikv-jemallocator` is wired as `#[global_allocator]` on every non-MSVC
-target (all production Linux targets) with the `background_threads`
-feature so the purge thread runs off the ingest hot path. Reason:
-RocksDB's write-heavy LSM workload is the pathological case for glibc
-`ptmalloc`; jemalloc keeps RSS bounded and is the allocator the RocksDB
-wiki explicitly recommends.
+target (all production Linux targets) with `background_threads` and
+`unprefixed_malloc_on_supported_platforms` so both Rust and the C++
+RocksDB library share one jemalloc heap (same idea as massa-node's
+`jemalloc_init`). Reason: RocksDB's write-heavy LSM workload is the
+pathological case for glibc `ptmalloc`; jemalloc keeps RSS bounded and
+is the allocator the RocksDB wiki explicitly recommends.
 
 ### 16.3 CLI subcommands
 

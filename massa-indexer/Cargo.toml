@@ -77,7 +77,7 @@ hmac = "=0.12.1"
 # The `background_threads` feature lets jemalloc run its own purge thread so
 # we don't pay that cost on hot paths.
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = { version = "=0.6.0", features = ["background_threads"] }
+tikv-jemallocator = { version = "=0.6.0", features = ["background_threads", "unprefixed_malloc_on_supported_platforms"] }
 
 # Pinned transitive deps whose newer versions require edition2024 (unstable in 1.81).
 hashbrown = "=0.15.2"

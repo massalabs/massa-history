@@ -13,7 +13,9 @@ use tracing_subscriber::EnvFilter;
 // jemalloc is the recommended allocator for RocksDB-heavy workloads: it
 // keeps RSS bounded under many-small-allocations and ships a built-in purge
 // thread (via `background_threads`) so we don't pay that cost on the hot
-// ingest path. Non-MSVC targets only (the crate does not build on MSVC).
+// ingest path. `unprefixed_malloc_on_supported_platforms` also replaces the
+// process `malloc`/`free` so the C++ RocksDB library shares the same heap
+// (same pattern as massa-node's `jemalloc_init`). Non-MSVC only.
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
