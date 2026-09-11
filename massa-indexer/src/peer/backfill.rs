@@ -161,6 +161,12 @@ pub struct BackfillConfig {
     /// chain-linkage arbiter in `apply_peer_patch` can settle
     /// divergences. Cheap: intended for a handful of periods.
     pub recheck_ranges: Vec<(u64, u64)>,
+
+    /// How far above the local FINAL head the sweep may start when peers
+    /// advertise a higher head (local node down / bootstrapping). 50 000
+    /// periods ≈ 9 days of chain — far more than any node outage — while
+    /// bounding the damage a peer lying about its head could do.
+    pub max_remote_head_lead: u64,
 }
 
 impl Default for BackfillConfig {
@@ -184,6 +190,7 @@ impl Default for BackfillConfig {
             stale_candidate_periods: 64,
             recent_incomplete_periods: 1_350,
             recheck_ranges: Vec::new(),
+            max_remote_head_lead: 50_000,
         }
     }
 }
@@ -249,7 +256,7 @@ pub async fn run_backfill(
             continue;
         }
 
-        let head = match db.read_last_final_slot() {
+        let local_head = match db.read_last_final_slot() {
             Ok(Some(s)) => s.period,
             Ok(None) => {
                 debug!("backfill: no last_final_slot yet, idling");
@@ -261,6 +268,19 @@ pub async fn run_backfill(
                 sleep(cfg.idle_pause).await;
                 continue;
             }
+        };
+        // Follow the chain through peers while our own node is down or
+        // bootstrapping: start the sweep at the highest FINAL period a
+        // peer advertises, bounded so a misbehaving peer cannot send us
+        // scanning empty space for days. Slots between our head and
+        // theirs have no local row and are ordinary gaps.
+        let head = match pool.best_remote_final_period().await {
+            Some(remote) if remote > local_head => {
+                let capped = remote.min(local_head.saturating_add(cfg.max_remote_head_lead));
+                debug!(local_head, remote, capped, "backfill: peers are ahead of the local node");
+                capped
+            }
+            _ => local_head,
         };
 
         if let Some(m) = &metrics {

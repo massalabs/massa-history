@@ -518,6 +518,23 @@ impl PeerPool {
         self.peers.is_empty() && !self.registry.has_any()
     }
 
+    /// Highest `last_final_period` any configured peer reported on its last
+    /// health probe (cached, refreshed at most every 30 s). `None` when no
+    /// peer has answered yet. Lets the backfill walker keep following the
+    /// chain through peers while the local node is down or bootstrapping:
+    /// slots above the local FINAL head are plain gaps to fill.
+    pub async fn best_remote_final_period(&self) -> Option<u64> {
+        let mut best: Option<u64> = None;
+        for peer in self.peers.iter() {
+            if let Ok(h) = peer.health().await {
+                if h.network == self.expected_network || self.expected_network.is_empty() {
+                    best = Some(best.map_or(h.last_final_period, |b| b.max(h.last_final_period)));
+                }
+            }
+        }
+        best
+    }
+
     /// Iterate configured outbound handles in shuffled order (CLI / diagnostics).
     pub fn shuffled(&self) -> Vec<Arc<PeerHandle>> {
         let mut v: Vec<_> = self.peers.iter().cloned().collect();

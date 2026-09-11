@@ -250,6 +250,73 @@ async fn consumer_catches_up_from_source() {
     );
 }
 
+/// Node outage: the consumer's own FINAL head is *behind* the peer's
+/// (its node is down / bootstrapping, so nothing arrives live). The walker
+/// must follow the peer's advertised head and pull the newer slots — and
+/// the local `last_final_slot` must advance as a result — instead of
+/// sweeping only `[0, local_head]` and serving a stale tip.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn consumer_follows_peer_head_when_local_node_is_behind() {
+    let network = "integration";
+
+    let source_dir = tempfile::tempdir().unwrap();
+    let source_db = Db::open(source_dir.path(), "lz4", 4).unwrap();
+    for p in [50u64, 51, 52] {
+        seed_final_slot(&source_db, p, 0, &format!("trail{p}"));
+    }
+    let source_addr = start_peer_server(source_db.clone(), network).await;
+
+    // Consumer knows FINAL only up to (10, 0) — 42 periods behind the peer.
+    let consumer_dir = tempfile::tempdir().unwrap();
+    let consumer_db = Db::open(consumer_dir.path(), "lz4", 4).unwrap();
+    seed_final_slot(&consumer_db, 10, 0, "trail10");
+    let consumer_sse = SseHub::new(32);
+    let (tx, rx) = mpsc::channel::<Event>(64);
+    let ingest = Ingest::new(consumer_db.clone(), consumer_sse.clone(), rx);
+    tokio::spawn(ingest.run());
+
+    let pool = PeerPool::with_db(
+        vec![PeerConfig {
+            name: "source".into(),
+            url: format!("http://{source_addr}"),
+        }],
+        network,
+        consumer_db.clone(),
+    );
+    let cfg = BackfillConfig {
+        rate_limit: Duration::from_millis(0),
+        wrap_pause: Duration::from_millis(50),
+        idle_pause: Duration::from_millis(50),
+        thread_count: 1,
+        ..BackfillConfig::default()
+    };
+    let tx_bf = tx.clone();
+    let db_bf = consumer_db.clone();
+    let bf_handle = tokio::spawn(async move {
+        run_backfill(db_bf, pool, tx_bf, cfg, None).await;
+    });
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let mut ok = false;
+    while std::time::Instant::now() < deadline {
+        let head = consumer_db.read_last_final_slot().unwrap().unwrap();
+        let s52 = consumer_db.read_slot(52, 0).unwrap();
+        if head.period == 52 && s52.map(|s| s.status == SlotStatus::Final).unwrap_or(false) {
+            ok = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    drop(tx);
+    bf_handle.abort();
+    assert!(ok, "consumer did not follow the peer's head above its own");
+    for p in [50u64, 51, 52] {
+        let s = consumer_db.read_slot(p, 0).unwrap().expect("slot pulled");
+        assert_eq!(s.status, SlotStatus::Final);
+        assert!(s.completeness.block_body_stored);
+    }
+}
+
 /// Dense-window bulk path: a consumer missing a long contiguous range must
 /// catch up via `StreamFinalSlots` range calls (one RPC covering the whole
 /// window) instead of one round-trip per slot. Asserts the range-stream
