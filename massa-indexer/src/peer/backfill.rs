@@ -167,6 +167,10 @@ pub struct BackfillConfig {
     /// periods ≈ 9 days of chain — far more than any node outage — while
     /// bounding the damage a peer lying about its head could do.
     pub max_remote_head_lead: u64,
+
+    /// Number of completed sweeps during which `recheck_ranges` stay
+    /// armed after startup.
+    pub recheck_sweeps: u32,
 }
 
 impl Default for BackfillConfig {
@@ -191,6 +195,7 @@ impl Default for BackfillConfig {
             recent_incomplete_periods: 1_350,
             recheck_ranges: Vec::new(),
             max_remote_head_lead: 50_000,
+            recheck_sweeps: 3,
         }
     }
 }
@@ -237,10 +242,13 @@ pub async fn run_backfill(
         "unified backfill worker starting"
     );
 
-    // Recheck ranges are consumed by the first *completed* sweep so a
-    // handful of operator-listed periods are re-offered to peers exactly
-    // once per process start.
+    // Recheck ranges stay armed for the first `recheck_sweeps` *completed*
+    // sweeps after startup, then disarm. Several passes matter: unwinding
+    // a dead-fork segment adopts peer verdicts newest-first, and a slot
+    // can only be settled once the block the real chain rejoins on has
+    // been adopted (see `patch::arbitrate_verdicts`).
     let mut recheck_ranges: Vec<(u64, u64)> = cfg.recheck_ranges.clone();
+    let mut recheck_sweeps_left: u32 = if recheck_ranges.is_empty() { 0 } else { cfg.recheck_sweeps };
 
     loop {
         if tx.is_closed() {
@@ -371,11 +379,20 @@ pub async fn run_backfill(
         }
 
         if !recheck_ranges.is_empty() {
-            info!(
-                ranges = ?recheck_ranges,
-                "backfill: recheck ranges re-offered to peers once; disarming"
-            );
-            recheck_ranges.clear();
+            recheck_sweeps_left = recheck_sweeps_left.saturating_sub(1);
+            if recheck_sweeps_left == 0 {
+                info!(
+                    ranges = ?recheck_ranges,
+                    "backfill: recheck ranges re-offered to peers; disarming"
+                );
+                recheck_ranges.clear();
+            } else {
+                info!(
+                    ranges = ?recheck_ranges,
+                    sweeps_left = recheck_sweeps_left,
+                    "backfill: recheck ranges re-offered to peers; keeping armed"
+                );
+            }
         }
         debug!("backfill: reached (0,0), pausing before next sweep");
         sleep(cfg.wrap_pause).await;

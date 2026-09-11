@@ -156,9 +156,66 @@ fn prev_final_block(db: &Db, slot: Slot) -> Result<Option<BlockId>> {
     Ok(None)
 }
 
+/// Walk forward from `slot` along our *own* FINAL rows in the thread and
+/// look for a broken link: a later FINAL block whose `parents[thread]` is
+/// not the block our rows name as the previous FINAL block. A dead fork
+/// that a node finalised for several periods is internally consistent
+/// (each fork block names the previous fork block), so a single
+/// next-parent check cannot see it; the chain only betrays it where the
+/// real chain rejoins. Returns the parent id that rejoin block names —
+/// the "anchor" the real chain continues from — when such a break exists
+/// within the lookaround, `None` when our chain is consistent.
+fn dead_fork_anchor(db: &Db, slot: Slot, local: &Verdict) -> Result<Option<BlockId>> {
+    let mut prev: Option<BlockId> = match local {
+        Verdict::Block(b) => Some(b.clone()),
+        Verdict::Miss => prev_final_block(db, slot)?,
+    };
+    for p in (slot.period + 1)..=(slot.period + LINKAGE_LOOKAROUND) {
+        let Some(s) = db.read_slot(p, slot.thread)? else { continue };
+        if s.status != SlotStatus::Final || s.is_miss {
+            continue;
+        }
+        let Some(bid) = s.final_block_id.clone() else { continue };
+        if let Some(block) = db.read_block(&bid)? {
+            if let Some(par) = block.parents.get(slot.thread as usize) {
+                if Some(par) != prev.as_ref() {
+                    return Ok(Some(par.clone()));
+                }
+            }
+        }
+        prev = Some(bid);
+    }
+    Ok(None)
+}
+
+/// True when `target` is reachable from `anchor` by following
+/// `parents[thread]` through block bodies we hold (bounded).
+fn reachable_via_parents(db: &Db, anchor: &BlockId, target: &BlockId, thread: u8) -> Result<bool> {
+    let mut cur = anchor.clone();
+    for _ in 0..64 {
+        if cur == *target {
+            return Ok(true);
+        }
+        let Some(block) = db.read_block(&cur)? else { return Ok(false) };
+        let Some(par) = block.parents.get(thread as usize) else { return Ok(false) };
+        cur = par.clone();
+    }
+    Ok(false)
+}
+
 /// Decide between a local and a peer FINAL verdict using the parent links
 /// of neighbouring FINAL blocks. Pure function of local data plus the two
 /// verdicts; never contacts the network.
+///
+/// Two layers:
+/// 1. the immediate next FINAL block in the thread names its parent — if
+///    that is the peer's block (or skips ours), the peer is right; if it
+///    is ours, we are;
+/// 2. otherwise, look for a *rejoin* further ahead ([`dead_fork_anchor`]).
+///    If our chain is broken there, every local block between the break
+///    and the last consistent block is a dead fork: adopt the peer when
+///    its block is the anchor itself (or an ancestor of it through bodies
+///    we hold), or when it says the slot was a miss.
 pub fn arbitrate_verdicts(
     db: &Db,
     slot: Slot,
@@ -171,30 +228,65 @@ pub fn arbitrate_verdicts(
     let Some(next_parent) = next_parent_link(db, slot)? else {
         return Ok(Arbitration::Inconclusive);
     };
-    Ok(match (local, peer) {
+    let immediate = match (local, peer) {
         (Verdict::Block(x), Verdict::Block(y)) => {
             if next_parent == *y {
-                Arbitration::AdoptPeer
+                Some(Arbitration::AdoptPeer)
             } else if next_parent == *x {
-                Arbitration::KeepLocal
+                Some(Arbitration::KeepLocal)
             } else {
-                Arbitration::Inconclusive
+                None
             }
         }
         (Verdict::Miss, Verdict::Block(y)) => {
             if next_parent == *y {
-                Arbitration::AdoptPeer
+                Some(Arbitration::AdoptPeer)
             } else {
-                Arbitration::KeepLocal
+                None
             }
         }
         (Verdict::Block(x), Verdict::Miss) => {
             if next_parent == *x {
-                Arbitration::KeepLocal
+                Some(Arbitration::KeepLocal)
             } else if prev_final_block(db, slot)?.as_ref() == Some(&next_parent) {
                 // The next block skips our slot entirely and builds on
                 // the previous block in the thread: our block was never
                 // final, the slot was a miss.
+                Some(Arbitration::AdoptPeer)
+            } else {
+                None
+            }
+        }
+        (Verdict::Miss, Verdict::Miss) => Some(Arbitration::KeepLocal),
+    };
+    if let Some(a) = immediate {
+        // A locally consistent immediate link can still be a dead fork
+        // (fork block naming fork block). Only trust "keep local" when the
+        // chain ahead of us is unbroken.
+        if a == Arbitration::KeepLocal {
+            if let Some(anchor) = dead_fork_anchor(db, slot, local)? {
+                return arbitrate_in_dead_fork(db, slot, local, peer, &anchor);
+            }
+        }
+        return Ok(a);
+    }
+    match dead_fork_anchor(db, slot, local)? {
+        Some(anchor) => arbitrate_in_dead_fork(db, slot, local, peer, &anchor),
+        None => Ok(Arbitration::Inconclusive),
+    }
+}
+
+fn arbitrate_in_dead_fork(
+    db: &Db,
+    slot: Slot,
+    local: &Verdict,
+    peer: &Verdict,
+    anchor: &BlockId,
+) -> Result<Arbitration> {
+    Ok(match (local, peer) {
+        (Verdict::Block(_), Verdict::Miss) => Arbitration::AdoptPeer,
+        (_, Verdict::Block(y)) => {
+            if y == anchor || reachable_via_parents(db, anchor, y, slot.thread)? {
                 Arbitration::AdoptPeer
             } else {
                 Arbitration::Inconclusive
@@ -1851,6 +1943,127 @@ mod tests {
         assert!(back.is_miss);
         assert!(back.final_block_id.is_none());
         assert_eq!(db.read_block(&x).unwrap().unwrap().status, BlockStatus::Discarded);
+    }
+
+    /// A node that finalised a dead fork for several periods leaves an
+    /// internally consistent segment (each fork block names the previous
+    /// fork block). Mirrors indexer3 after the MAIN.5.0 upgrade: real
+    /// chain `…111 → X@113 → R@116 → …119`, local fork
+    /// `Y@113 → F1@114 → F2@115 → F3@116 → F4@117`. Applying the peer's
+    /// verdicts newest-first must unwind the whole segment.
+    #[test]
+    fn arbiter_unwinds_dead_fork_segment_via_rejoin() {
+        use crate::ids::mk_test_block_id;
+        let (db, _dir, sse) = open_db();
+        let t = 0u8;
+        let b111 = mk_test_block_id(111);
+        let x = mk_test_block_id(113); // real block at 113 (body missing everywhere)
+        let r = mk_test_block_id(116); // real block at 116, parents = X
+        let b119 = mk_test_block_id(119); // real block at 119, parents = R (rejoin)
+        let y = mk_test_block_id(1130);
+        let f1 = mk_test_block_id(1140);
+        let f2 = mk_test_block_id(1150);
+        let f3 = mk_test_block_id(1160);
+        let f4 = mk_test_block_id(1170);
+
+        // Local view: consistent chain up to 111, then the dead fork, then
+        // the real chain rejoins at 119 naming R (which we do not hold).
+        write_final_with_body(&db, Slot::new(111, t), mk_block(b111.clone(), Slot::new(111, t), vec![], vec![]));
+        write_final_with_body(&db, Slot::new(113, t), mk_block(y.clone(), Slot::new(113, t), vec![b111.clone()], vec![]));
+        write_final_with_body(&db, Slot::new(114, t), mk_block(f1.clone(), Slot::new(114, t), vec![y.clone()], vec![]));
+        write_final_with_body(&db, Slot::new(115, t), mk_block(f2.clone(), Slot::new(115, t), vec![f1.clone()], vec![]));
+        write_final_with_body(&db, Slot::new(116, t), mk_block(f3.clone(), Slot::new(116, t), vec![f2.clone()], vec![]));
+        write_final_with_body(&db, Slot::new(117, t), mk_block(f4.clone(), Slot::new(117, t), vec![f3.clone()], vec![]));
+        write_final_with_body(&db, Slot::new(119, t), mk_block(b119, Slot::new(119, t), vec![r.clone()], vec![]));
+
+        // Peer verdicts, applied newest-first like the range stream does.
+        // 117: miss.
+        let mut p117 = fresh_resp(117, 0);
+        p117.is_miss = true;
+        assert!(apply_peer_patch(&db, &sse, &p117, 1).unwrap().divergence_repaired, "117 → miss");
+        // 116: R with body (parents[0] = X).
+        let mut rb = mk_block(r.clone(), Slot::new(116, t), vec![x.clone()], vec![]);
+        rb.status = BlockStatus::Final;
+        let mut p116 = fresh_resp(116, 0);
+        p116.final_block_id = r.to_string();
+        p116.block = Some(crate::codec::block_to_peer_pb(&rb).unwrap());
+        assert!(apply_peer_patch(&db, &sse, &p116, 2).unwrap().divergence_repaired, "116 → R");
+        // 115, 114: misses.
+        let mut p115 = fresh_resp(115, 0);
+        p115.is_miss = true;
+        assert!(apply_peer_patch(&db, &sse, &p115, 3).unwrap().divergence_repaired, "115 → miss");
+        let mut p114 = fresh_resp(114, 0);
+        p114.is_miss = true;
+        assert!(apply_peer_patch(&db, &sse, &p114, 4).unwrap().divergence_repaired, "114 → miss");
+        // 113: X, no body available anywhere.
+        let mut p113 = fresh_resp(113, 0);
+        p113.final_block_id = x.to_string();
+        assert!(apply_peer_patch(&db, &sse, &p113, 5).unwrap().divergence_repaired, "113 → X");
+
+        // Final local state matches the real chain.
+        let s113 = db.read_slot(113, t).unwrap().unwrap();
+        assert_eq!(s113.final_block_id.as_ref(), Some(&x));
+        assert!(!s113.is_miss && !s113.completeness.block_body_stored);
+        for p in [114u64, 115, 117] {
+            let s = db.read_slot(p, t).unwrap().unwrap();
+            assert!(s.is_miss, "slot {p} must be a miss");
+            assert!(s.final_block_id.is_none());
+        }
+        let s116 = db.read_slot(116, t).unwrap().unwrap();
+        assert_eq!(s116.final_block_id.as_ref(), Some(&r));
+        assert!(s116.completeness.block_body_stored);
+        for dead in [&y, &f1, &f2, &f3, &f4] {
+            assert_eq!(db.read_block(dead).unwrap().unwrap().status, BlockStatus::Discarded);
+        }
+        // Chain is now consistent: no anchor, and a re-offer of the fork
+        // verdicts is refused.
+        assert!(dead_fork_anchor(&db, Slot::new(113, t), &Verdict::Block(x.clone())).unwrap().is_none());
+        let mut fork_again = fresh_resp(113, 0);
+        fork_again.final_block_id = y.to_string();
+        let out = apply_peer_patch(&db, &sse, &fork_again, 6).unwrap();
+        assert!(out.divergence_kept_local && !out.divergence_repaired);
+    }
+
+    /// The real-chain holder (indexer1's view) must never yield to a fork
+    /// verdict, even when the real block's body is missing.
+    #[test]
+    fn arbiter_real_chain_without_body_keeps_local_against_fork() {
+        use crate::ids::mk_test_block_id;
+        let (db, _dir, sse) = open_db();
+        let t = 0u8;
+        let b111 = mk_test_block_id(111);
+        let x = mk_test_block_id(113);
+        let r = mk_test_block_id(116);
+        let y = mk_test_block_id(1130);
+        write_final_with_body(&db, Slot::new(111, t), mk_block(b111, Slot::new(111, t), vec![], vec![]));
+        // 113 = X, FINAL, body missing.
+        let mut s = SlotState::fresh(Slot::new(113, t), 0);
+        s.status = SlotStatus::Final;
+        s.final_block_id = Some(x.clone());
+        db.write_slot(&s).unwrap();
+        for p in [114u64, 115] {
+            let mut m = SlotState::fresh(Slot::new(p, t), 0);
+            m.status = SlotStatus::Final;
+            m.is_miss = true;
+            m.completeness.block_body_stored = true;
+            db.write_slot(&m).unwrap();
+        }
+        write_final_with_body(&db, Slot::new(116, t), mk_block(r, Slot::new(116, t), vec![x.clone()], vec![]));
+
+        let mut fork = fresh_resp(113, 0);
+        fork.final_block_id = y.to_string();
+        let mut yb = mk_block(y.clone(), Slot::new(113, t), vec![], vec![]);
+        yb.status = BlockStatus::Final;
+        fork.block = Some(crate::codec::block_to_peer_pb(&yb).unwrap());
+        let out = apply_peer_patch(&db, &sse, &fork, 1).unwrap();
+        assert!(out.divergence_kept_local);
+        assert_eq!(db.read_slot(113, t).unwrap().unwrap().final_block_id.as_ref(), Some(&x));
+        // A fork "block" offered for a real miss is refused too.
+        let mut fork_block_at_miss = fresh_resp(114, 0);
+        fork_block_at_miss.final_block_id = mk_test_block_id(1140).to_string();
+        let out = apply_peer_patch(&db, &sse, &fork_block_at_miss, 2).unwrap();
+        assert!(out.divergence_kept_local);
+        assert!(db.read_slot(114, t).unwrap().unwrap().is_miss);
     }
 
     /// No later block to consult → inconclusive → local kept, nothing
