@@ -1329,6 +1329,12 @@ every block header names its parent in each thread.
 `peer/patch.rs::arbitrate_verdicts` runs when a peer's FINAL verdict
 (block id, or miss) differs from the local one:
 
+0. a FINAL block's parents are FINAL: a block (ours or the peer's,
+   when it shipped the body) whose parent in *any* thread sits at a
+   slot our rows finalised as a miss or as a different block was
+   built on a dead fork. A dead local block yields to the peer; a dead
+   peer block is refused. This is what settles the first fork blocks
+   of a period, whose same-thread successor may have no body anywhere;
 1. the first later FINAL block in the thread names its parent — if
    that is the peer's block (or skips ours onto the previous block)
    the peer is right; if it is ours, we are;
@@ -1845,7 +1851,7 @@ Progress: `massa_indexer_repair_*` counters and the `repair` object in
 |---|---|---|
 | ~250 k (idx1), ~224 k (idx3), ~43 k (idx2) slots stuck `Candidate` | walker skipped every `Candidate`; streams do not replay across restarts | §8.5 predicate; all healed by the first sweep after deploy (`peer_promoted_final_total`) |
 | No transfers indexed since 2026‑05‑17 18:30 UTC (period 4608114) | all three `massa-node` binaries rebuilt for MAIN.5.0 with default features → `NewTransfersInfoServer` `Unimplemented`; indexer warned once | nodes rebuilt with `--features execution-info` one at a time (idx3 → idx1 → idx2); live transfers flow again on all hosts; `[repair.reconstruct_transfers]` rebuilt 2 196 exact `Transaction` movements per host over the gap; `[repair.pull_parts]` copied the inter-rebuild window. Rewards, fees and SC-internal transfers for 2026‑05‑17 → 2026‑09‑11 are **not recoverable** (the node cannot replay them; the legacy DDB storer has only sparse `_N` rows). |
-| Divergent FINAL verdicts at 4608113‑4608117 | mixed node versions at the upgrade minute; first‑final‑wins | §8.6 arbiter + `recheck_periods`; idx1 held the real chain, idx2 adopted it, idx3's 5‑period dead fork unwound |
+| Divergent FINAL verdicts at 4608113‑4608132 (idx3 followed the dead fork for 20 periods, idx2 for one) | mixed node versions at the upgrade minute; first‑final‑wins | §8.6 arbiter + `recheck_periods = [[4608105, 4608140]]`; idx1 held the real chain (its node was on MAIN.5.0), idx2 and idx3 converged to it |
 | Peer-filled slots left `exec_output_final`/`transfers_stored` false, blocks `seen_candidate`, ops without final status | empty parts never settled; patch did not touch existing rows | completeness echo (§8.5), finality + op-status merge in `apply_peer_patch` |
 | Indexer RSS 12‑15 GB + 8 GB swap per host | RocksDB `max_open_files = -1` pinned ~70 k table readers | shared 2 GiB block cache, `max_open_files = 8192`, global memtable cap; ~1‑3 GB RSS now (no SST rewrite) |
 | `/v1/backfill/status` decoded all 170 M `cf_slot` rows per call, publicly | | counters only |
