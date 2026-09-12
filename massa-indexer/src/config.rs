@@ -50,6 +50,14 @@ pub struct Repair {
     /// Example: `recheck_periods = [[4608110, 4608120]]`.
     #[serde(default)]
     pub recheck_periods: Vec<(u64, u64)>,
+    /// Slots `(period, thread)` the operator declares FINAL misses,
+    /// bypassing the chain-linkage arbiter. For the rare verdict the
+    /// arbiter cannot decide from local data (e.g. the real successor
+    /// block's body was never received by any indexer). Applied once at
+    /// startup, idempotent, logged at WARN. Example:
+    /// `force_miss = [[4608113, 0]]`.
+    #[serde(default)]
+    pub force_miss: Vec<(u64, u8)>,
     #[serde(default)]
     pub reconstruct_transfers: ReconstructTransfers,
     #[serde(default)]
@@ -690,6 +698,7 @@ stale_candidate_periods = 100
 
 [repair]
 recheck_periods = [[4608110, 4608120], [10, 12]]
+force_miss = [[4608113, 0]]
 
 [repair.reconstruct_transfers]
 enabled = true
@@ -705,6 +714,7 @@ transfers = true
         assert_eq!(c.peer.stale_candidate_periods, 100);
         assert_eq!(c.peer.recent_incomplete_periods, 1_350);
         assert_eq!(c.repair.recheck_periods, vec![(4_608_110, 4_608_120), (10, 12)]);
+        assert_eq!(c.repair.force_miss, vec![(4_608_113, 0)]);
         assert!(c.repair.reconstruct_transfers.enabled);
         assert_eq!(c.repair.reconstruct_transfers.from_period, 4_608_114);
         assert_eq!(c.repair.reconstruct_transfers.to_period, 0);

@@ -11,7 +11,7 @@ use crate::{
         registry::PeerRegistry,
         run_backfill, serve_peer, BackfillConfig, PeerService,
     },
-    proto::indexer::v1::FinalSlotParts,
+    proto::indexer::v1::{FinalSlotParts, FinalSlotResponse},
     rest::{router, AppState},
     sse::SseHub,
     Error, Result,
@@ -252,6 +252,19 @@ pub async fn run(config: Config) -> Result<()> {
 
     // One-shot repair tasks (`[repair]`, see `crate::repair`). Ranges with
     // `to_period = 0` resolve to the FINAL head at startup.
+    for (period, thread) in &config.repair.force_miss {
+        let resp = FinalSlotResponse {
+            period: *period,
+            thread: u32::from(*thread),
+            final_known: true,
+            is_miss: true,
+            ..Default::default()
+        };
+        if tx.send(Event::ForcedVerdict(Box::new(resp))).await.is_err() {
+            warn!("ingest channel closed before forced verdicts were queued");
+            break;
+        }
+    }
     let head_now = db.read_last_final_slot()?.map(|s| s.period).unwrap_or(0);
     let meta_now = db.read_meta()?;
     if config.repair.reconstruct_transfers.enabled {

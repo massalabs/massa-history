@@ -1821,7 +1821,14 @@ enabled is harmless — they exit immediately on the next start).
 # FINAL slots in these inclusive period ranges are re-offered to peers
 # during the first 3 sweeps after startup so the arbiter (§8.6) can
 # settle divergent verdicts.
-recheck_periods = [[4608110, 4608120]]
+recheck_periods = [[4608105, 4608140]]
+
+# Operator-decided FINAL misses for slots the arbiter cannot settle from
+# local data (bypasses it; applied once at startup, idempotent, WARN).
+# (4608113, 0): indexer1's real-chain node said miss, indexer2 held a
+# fork block whose only possible witness (the body of the real block at
+# (4608115, 0)) was never received by any indexer.
+force_miss = [[4608113, 0]]
 
 # Rebuild exact op-derived transfers (Transaction amounts of
 # successfully executed ops) for FINAL slots that never received the

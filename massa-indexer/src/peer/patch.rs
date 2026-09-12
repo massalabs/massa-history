@@ -755,6 +755,51 @@ pub fn apply_peer_patch(
     Ok(out)
 }
 
+/// Operator-forced FINAL verdict (`[repair] force_miss`): replace whatever
+/// the local row says with the shipped verdict, bypassing the arbiter.
+/// Returns `true` when the row changed. Idempotent.
+pub fn apply_forced_verdict(
+    db: &Db,
+    sse: &SseHub,
+    resp: &FinalSlotResponse,
+    now_ms: i64,
+) -> Result<bool> {
+    let thread = match u8::try_from(resp.thread) {
+        Ok(t) => t,
+        Err(_) => return Ok(false),
+    };
+    let slot = Slot::new(resp.period, thread);
+    let mut state = db
+        .read_slot(slot.period, slot.thread)?
+        .unwrap_or_else(|| SlotState::fresh(slot, now_ms));
+    let peer_block = if resp.final_block_id.is_empty() {
+        None
+    } else {
+        BlockId::parse(resp.final_block_id.clone()).ok()
+    };
+    let target = if resp.is_miss { Verdict::Miss } else { peer_block.clone().map(Verdict::Block).ok_or_else(|| crate::Error::other("forced verdict without block id"))? };
+    if state.status == SlotStatus::Final && Verdict::of_local(&state) == Some(target.clone()) {
+        return Ok(false);
+    }
+    warn!(
+        period = slot.period,
+        thread = slot.thread,
+        local = ?Verdict::of_local(&state),
+        forced = ?target,
+        "operator-forced FINAL verdict applied ([repair] force_miss)"
+    );
+    let trail = if resp.execution_trail_hash.is_empty() { None } else { Some(resp.execution_trail_hash.clone()) };
+    adopt_peer_verdict(db, &mut state, resp, &peer_block, trail)?;
+    state.status = SlotStatus::Final;
+    // Every block we still hold for this slot is not the final one.
+    apply_finality_to_blocks(db, state.final_block_id.as_ref(), &state.candidate_block_ids)?;
+    state.last_updated_ts_ms = now_ms;
+    db.write_slot(&state)?;
+    sse.broadcast(SlotSseEvent::SlotFinal(state.clone()));
+    sse.broadcast(SlotSseEvent::SlotUpdated(state));
+    Ok(true)
+}
+
 /// Replace the local FINAL verdict with the peer's after chain linkage
 /// proved the local one wrong. Everything derived from the old verdict
 /// (exec output, transfers, completeness) is dropped so the parts shipped
@@ -2193,6 +2238,31 @@ mod tests {
         let out = apply_peer_patch(&db, &sse, &peer_bad, 2).unwrap();
         assert!(out.divergence_kept_local);
         assert!(db.read_slot(113, 0).unwrap().unwrap().is_miss);
+    }
+
+    /// `[repair] force_miss`: the operator's verdict replaces a local
+    /// FINAL block the arbiter could not decide on; idempotent.
+    #[test]
+    fn forced_miss_replaces_local_block_and_is_idempotent() {
+        use crate::ids::mk_test_block_id;
+        let (db, _dir, sse) = open_db();
+        let slot = Slot::new(600, 0);
+        let f = mk_test_block_id(600);
+        write_final_with_body(&db, slot, mk_block(f.clone(), slot, vec![], vec![]));
+
+        let forced = FinalSlotResponse {
+            period: 600,
+            thread: 0,
+            final_known: true,
+            is_miss: true,
+            ..Default::default()
+        };
+        assert!(apply_forced_verdict(&db, &sse, &forced, 1).unwrap());
+        let back = db.read_slot(600, 0).unwrap().unwrap();
+        assert!(back.is_miss && back.final_block_id.is_none());
+        assert_eq!(back.status, SlotStatus::Final);
+        assert_eq!(db.read_block(&f).unwrap().unwrap().status, BlockStatus::Discarded);
+        assert!(!apply_forced_verdict(&db, &sse, &forced, 2).unwrap(), "second apply is a no-op");
     }
 
     /// No later block to consult → inconclusive → local kept, nothing

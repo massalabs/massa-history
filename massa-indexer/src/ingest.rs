@@ -53,6 +53,12 @@ pub enum Event {
     /// async-pool rows and most transfer kinds are not — see
     /// `peer::patch::apply_legacy_patch` for the full precedence rules.
     LegacyPatch(Box<crate::proto::indexer::v1::FinalSlotResponse>),
+    /// Operator-forced FINAL verdict (`[repair] force_miss`). Applied
+    /// through `peer::patch::apply_forced_verdict`, which bypasses the
+    /// arbiter: the operator has decided from evidence the arbiter
+    /// cannot see (e.g. the real successor block's body was never
+    /// received by anyone).
+    ForcedVerdict(Box<crate::proto::indexer::v1::FinalSlotResponse>),
     Tick,
 }
 
@@ -201,6 +207,19 @@ impl Ingest {
                             m.ingest_legacy_patches_total
                                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         });
+                    }
+                }
+                Event::ForcedVerdict(resp) => {
+                    match crate::peer::apply_forced_verdict(&self.db, &self.sse, resp.as_ref(), now_ms()) {
+                        Err(e) => warn!(error = %e, "apply_forced_verdict"),
+                        Ok(changed) => {
+                            if changed {
+                                self.bump(|m| {
+                                    m.peer_divergence_repaired_total
+                                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                });
+                            }
+                        }
                     }
                 }
                 Event::Tick => {
