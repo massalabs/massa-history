@@ -293,6 +293,16 @@ async fn run_oneshot_pass(
                     m.legacy_ddb_rpcs_total
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
+                // A slot our node already finalised with a block whose body
+                // we never received (the legacy storer may lack it too) is
+                // *not* a miss — the verdict stands, only the body is
+                // missing. Leave it alone rather than shipping a miss.
+                if let Ok(Some(s)) = db.read_slot(outcome.period, outcome.thread) {
+                    if s.status == SlotStatus::Final && s.final_block_id.is_some() {
+                        skipped += 1;
+                        continue;
+                    }
+                }
                 let miss = FinalSlotResponse {
                     period: outcome.period,
                     thread: u32::from(outcome.thread),

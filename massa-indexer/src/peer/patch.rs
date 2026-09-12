@@ -422,7 +422,10 @@ pub fn apply_legacy_patch(
             out.block_applied = true;
         }
     }
-    if resp.is_miss {
+    // Only a slot that *is* a miss locally satisfies "body stored"
+    // vacuously. A legacy "no row" answer for a slot we finalised with a
+    // block must not hide that the body is still missing.
+    if resp.is_miss && state.is_miss {
         state.completeness.block_body_stored = true;
     }
 
@@ -1559,6 +1562,30 @@ mod tests {
         let again = db.iter_transfers_for_slot(30, 0).unwrap();
         assert_eq!(again.len(), 1, "no duplicate transfer rows on re-apply");
         assert_eq!(again[0].id, "synth-0", "row identity stable on re-apply");
+    }
+
+    /// A legacy "no row" (miss) answer for a slot our node already
+    /// finalised with a block must neither change the verdict nor hide
+    /// that the body is still missing.
+    #[test]
+    fn legacy_miss_does_not_mask_missing_body_of_final_block() {
+        use crate::ids::mk_test_block_id;
+        let (db, _dir, sse) = open_db();
+        let x = mk_test_block_id(77);
+        let mut s = SlotState::fresh(Slot::new(77, 0), 0);
+        s.status = SlotStatus::Final;
+        s.final_block_id = Some(x.clone());
+        db.write_slot(&s).unwrap();
+
+        let mut miss = fresh_resp(77, 0);
+        miss.execution_trail_hash = String::new();
+        miss.is_miss = true;
+        apply_legacy_patch(&db, &sse, &miss, 1).unwrap();
+
+        let back = db.read_slot(77, 0).unwrap().unwrap();
+        assert!(!back.is_miss);
+        assert_eq!(back.final_block_id.as_ref(), Some(&x));
+        assert!(!back.completeness.block_body_stored, "body is still missing");
     }
 
     /// Re-applying a legacy patch with a richer payload (e.g. a
