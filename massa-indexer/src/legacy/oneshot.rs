@@ -20,9 +20,10 @@
 //! ### Non-blocking by construction
 //!
 //! Runs in its own tokio task. The only shared resource is the ingest
-//! `EventTx` channel — exactly the same channel the live-stream and
-//! peer workers use. The ingest worker drains `Event::LegacyPatch`
-//! through [`crate::peer::patch::apply_legacy_patch`], which is
+//! worker's bulk lane (`EventTx`), which the worker serves only when no
+//! live node event is ready (strict live priority, see `ingest.rs`).
+//! The ingest worker drains `Event::LegacyPatch` through
+//! [`crate::peer::patch::apply_legacy_patch`], which is
 //! lowest-precedence by construction:
 //!
 //!   * never overwrites a richer local row,

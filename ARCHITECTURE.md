@@ -1175,8 +1175,11 @@ one `StreamFinalSlots` range call per logical peer — hundreds of
 slots per second instead of one slot per round-trip. Only locally
 missing slots are applied; each apply sleeps
 `max(apply_pause, encoded_size / apply_bandwidth)` (2 ms floor,
-2 MB/s budget) so bulk catch-up cannot starve the live ingest
-channel nor saturate a home uplink shared with other peer traffic. Sparse windows
+2 MB/s budget) so bulk catch-up keeps the writer's bulk lane shallow
+and cannot saturate a home uplink shared with other peer traffic.
+(Live node events ride a separate lane the ingest worker drains with
+strict priority, so patch volume cannot delay finalization in any
+case.) Sparse windows
 and small leftovers (e.g. slots only reachable via a session-only
 peer) still use the per-slot path; windows nobody can supply cost a
 couple of instantly-empty streams per sweep. Because
@@ -1512,10 +1515,11 @@ Algorithm:
    importer doesn't re-launch on subsequent boots.
 
 The importer is **non-blocking by construction**. It runs in its
-own tokio task and shares only the ingest `EventTx` channel with
-the live-stream / peer workers. Live ingest keeps making forward
-progress on the head while the importer fills the historical tail
-from the bottom.
+own tokio task and shares only the ingest worker's bulk lane
+(`EventTx`) with the peer / repair workers; the node streams use a
+separate live lane that the worker serves with strict priority. Live
+ingest keeps making forward progress on the head while the importer
+fills the historical tail from the bottom.
 
 Resume guarantee: because skips are pure (no DDB call issued),
 restarting the importer mid-run is cheap. Roughly: a fully-imported

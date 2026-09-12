@@ -93,8 +93,12 @@ pub async fn run(config: Config) -> Result<()> {
         }
     }
 
-    // channels
-    let (tx, rx) = mpsc::channel::<Event>(1024);
+    // Two lanes into the single writer (see `ingest.rs`): `live_tx` for
+    // the node streams + tick, `bulk_tx` for everything peer / repair /
+    // legacy. The worker drains live with strict priority, so bulk
+    // volume can never delay finalization.
+    let (live_tx, live_rx) = mpsc::channel::<Event>(1024);
+    let (bulk_tx, bulk_rx) = mpsc::channel::<Event>(1024);
     let sse = SseHub::new(config.rest.sse_ring_buffer_size.max(16));
 
     // shared Prometheus counters — plumbed into the ingest worker, the
@@ -103,12 +107,13 @@ pub async fn run(config: Config) -> Result<()> {
     let metrics = Arc::new(crate::metrics::Metrics::new());
 
     // ingest worker
-    let ingest = Ingest::new(db.clone(), sse.clone(), rx).with_metrics(metrics.clone());
-    let ingest_tx = tx.clone();
+    let ingest = Ingest::new(db.clone(), sse.clone(), live_rx)
+        .with_bulk_rx(bulk_rx)
+        .with_metrics(metrics.clone());
     let ingest_handle = tokio::spawn(ingest.run());
 
     // periodic tick -> heartbeat + writer wake
-    let tick_tx = tx.clone();
+    let tick_tx = live_tx.clone();
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(Duration::from_secs(5));
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -123,7 +128,7 @@ pub async fn run(config: Config) -> Result<()> {
     // gRPC consumers — each subscription is independently toggleable via
     // `[streams]` so operators can opt out of bulky streams (e.g. ABI call
     // stacks) on hosts that don't need them, and re-enable later.
-    let grpc_tx = tx.clone();
+    let grpc_tx = live_tx.clone();
     let grpc_url = config.node.grpc_url.clone();
     let conn_timeout = config.node.connect_timeout_ms;
     let streams_cfg = config.streams;
@@ -239,7 +244,7 @@ pub async fn run(config: Config) -> Result<()> {
             ..BackfillConfig::default()
         };
         let db_for_bf = db.clone();
-        let tx_for_bf = tx.clone();
+        let tx_for_bf = bulk_tx.clone();
         let m_for_bf = metrics.clone();
         let bf_pool = pool.clone();
         tokio::spawn(async move {
@@ -251,7 +256,8 @@ pub async fn run(config: Config) -> Result<()> {
     }
 
     // One-shot repair tasks (`[repair]`, see `crate::repair`). Ranges with
-    // `to_period = 0` resolve to the FINAL head at startup.
+    // `to_period = 0` resolve to the FINAL head at startup. All of them
+    // feed the bulk lane.
     for (period, thread) in &config.repair.force_miss {
         let resp = FinalSlotResponse {
             period: *period,
@@ -260,7 +266,7 @@ pub async fn run(config: Config) -> Result<()> {
             is_miss: true,
             ..Default::default()
         };
-        if tx.send(Event::ForcedVerdict(Box::new(resp))).await.is_err() {
+        if bulk_tx.send(Event::ForcedVerdict(Box::new(resp))).await.is_err() {
             warn!("ingest channel closed before forced verdicts were queued");
             break;
         }
@@ -277,7 +283,7 @@ pub async fn run(config: Config) -> Result<()> {
             genesis_timestamp_ms: meta_now.as_ref().map(|m| m.genesis_timestamp_ms).unwrap_or(0),
             t0_ms: meta_now.as_ref().map(|m| m.t0_ms).unwrap_or(16_000),
         };
-        let (db_r, tx_r, m_r) = (db.clone(), tx.clone(), metrics.clone());
+        let (db_r, tx_r, m_r) = (db.clone(), bulk_tx.clone(), metrics.clone());
         tokio::spawn(async move {
             crate::repair::run_reconstruct_transfers(db_r, tx_r, rcfg, Some(m_r)).await;
         });
@@ -297,7 +303,7 @@ pub async fn run(config: Config) -> Result<()> {
                     thread_count: 32,
                     require_sc_ops: pp.require_sc_ops,
                 };
-                let (db_p, tx_p, m_p) = (db.clone(), tx.clone(), metrics.clone());
+                let (db_p, tx_p, m_p) = (db.clone(), bulk_tx.clone(), metrics.clone());
                 tokio::spawn(async move {
                     crate::repair::run_pull_parts(db_p, pool, tx_p, pcfg, Some(m_p)).await;
                 });
@@ -319,7 +325,7 @@ pub async fn run(config: Config) -> Result<()> {
                     t0_ms: meta_now.as_ref().map(|m| m.t0_ms).unwrap_or(16_000),
                     concurrency: config.legacy_ddb.concurrency.max(1),
                 };
-                let (db_l, tx_l, m_l) = (db.clone(), tx.clone(), metrics.clone());
+                let (db_l, tx_l, m_l) = (db.clone(), bulk_tx.clone(), metrics.clone());
                 tokio::spawn(async move {
                     crate::repair::run_legacy_sub_transfers(db_l, Arc::new(src), tx_l, lcfg, Some(m_l)).await;
                 });
@@ -358,7 +364,7 @@ pub async fn run(config: Config) -> Result<()> {
                     "AWS DDB one-shot importer enabled"
                 );
                 let db_for_os = db.clone();
-                let tx_for_os = tx.clone();
+                let tx_for_os = bulk_tx.clone();
                 let m_for_os = metrics.clone();
                 tokio::spawn(async move {
                     crate::legacy::run_oneshot_import(
@@ -405,8 +411,8 @@ pub async fn run(config: Config) -> Result<()> {
     if let Some(sd) = peer_shutdown {
         let _ = sd.send(());
     }
-    drop(ingest_tx);
-    drop(tx);
+    drop(live_tx);
+    drop(bulk_tx);
     let _ = tokio::time::timeout(Duration::from_secs(5), ingest_handle).await;
     rest_handle.abort();
     Ok(())

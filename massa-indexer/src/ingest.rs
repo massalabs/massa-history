@@ -1,7 +1,25 @@
 //! Ingestion state machine.
 //!
-//! Single writer per indexer. All mutations are funneled through an `mpsc`
-//! channel into this loop so that a transition on a given slot is atomic.
+//! Single writer per indexer. All mutations are funneled through `mpsc`
+//! channels into this loop so that a transition on a given slot is atomic.
+//! There are two lanes, drained by the **same** task (still one writer):
+//!
+//!   * **live** — `Block` / `Exec` / `Transfers` from the node streams,
+//!     plus `Tick`. Low volume (a couple of frames per second) and
+//!     latency-critical: this is what moves the FINAL head.
+//!   * **bulk** — `PeerPatch` / `LegacyPatch` / `ForcedVerdict` from the
+//!     backfill walker, `[repair]` passes and the legacy importer. High
+//!     volume during catch-up, never urgent.
+//!
+//! The loop gives the live lane **strict priority**: a bulk event is
+//! applied only when no live event is ready (`tokio::select! { biased; …}`
+//! in [`Ingest::step`]). Patch volume therefore can never delay
+//! finalization. Bulk producers still pace themselves (`apply_pause`), so
+//! the bulk lane stays shallow and the live lane's ~2 events/s leave it
+//! virtually all of the writer's time — no starvation either way.
+//! Cross-lane reordering is safe: every apply path is idempotent,
+//! slot-scoped, re-reads the current slot state, and first-final-wins /
+//! the chain-linkage arbiter are order-independent.
 //!
 //! The loop handles the following event kinds, all optional — a stream that
 //! is disabled in `[streams]` simply never produces events here, and the
@@ -91,15 +109,35 @@ pub enum SlotSseEvent {
 pub struct Ingest {
     pub db: Db,
     pub sse: SseHub,
-    pub rx: EventRx,
+    /// Live lane: node stream events + `Tick`. Strict priority. `None`
+    /// once the channel is closed and drained.
+    pub live_rx: Option<EventRx>,
+    /// Bulk lane: peer / legacy patches and forced verdicts, applied only
+    /// when no live event is ready. `None` when no bulk producer is wired
+    /// (unit tests) or once the channel is closed and drained.
+    pub bulk_rx: Option<EventRx>,
     /// Shared Prometheus counters. Optional so unit tests can construct an
     /// `Ingest` without a full metrics dependency chain.
     pub metrics: Option<std::sync::Arc<crate::metrics::Metrics>>,
 }
 
 impl Ingest {
-    pub fn new(db: Db, sse: SseHub, rx: EventRx) -> Self {
-        Self { db, sse, rx, metrics: None }
+    /// Worker fed by the live lane only. Add the bulk lane with
+    /// [`Self::with_bulk_rx`].
+    pub fn new(db: Db, sse: SseHub, live_rx: EventRx) -> Self {
+        Self {
+            db,
+            sse,
+            live_rx: Some(live_rx),
+            bulk_rx: None,
+            metrics: None,
+        }
+    }
+
+    /// Wire the bulk lane (`PeerPatch` / `LegacyPatch` / `ForcedVerdict`).
+    pub fn with_bulk_rx(mut self, bulk_rx: EventRx) -> Self {
+        self.bulk_rx = Some(bulk_rx);
+        self
     }
 
     pub fn with_metrics(mut self, metrics: std::sync::Arc<crate::metrics::Metrics>) -> Self {
@@ -115,120 +153,143 @@ impl Ingest {
 
     pub async fn run(mut self) {
         info!("ingest worker running");
-        while let Some(ev) = self.rx.recv().await {
-            match ev {
-                Event::Block(fb) => {
-                    if let Err(e) = self.handle_block(*fb) {
-                        warn!(error = %e, "handle_block");
+        while self.step().await {}
+        info!("ingest worker stopping");
+    }
+
+    /// One scheduling decision of the writer: wait for the next event and
+    /// apply it — live lane first, bulk lane only when no live event is
+    /// ready (`biased` select). A lane whose channel closed and drained is
+    /// retired; returns `false` once no lane is left (shutdown).
+    pub async fn step(&mut self) -> bool {
+        tokio::select! {
+            biased;
+            ev = recv_lane(&mut self.live_rx), if self.live_rx.is_some() => match ev {
+                Some(ev) => self.handle(ev),
+                None => self.live_rx = None,
+            },
+            ev = recv_lane(&mut self.bulk_rx), if self.bulk_rx.is_some() => match ev {
+                Some(ev) => self.handle(ev),
+                None => self.bulk_rx = None,
+            },
+            else => return false,
+        }
+        true
+    }
+
+    /// Apply one event, whichever lane it came from.
+    fn handle(&mut self, ev: Event) {
+        match ev {
+            Event::Block(fb) => {
+                if let Err(e) = self.handle_block(*fb) {
+                    warn!(error = %e, "handle_block");
+                    self.bump(|m| {
+                        m.ingest_events_dropped_total
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    });
+                } else {
+                    self.bump(|m| {
+                        m.ingest_blocks_total
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    });
+                }
+            }
+            Event::Exec(out) => {
+                if let Err(e) = self.handle_exec(*out) {
+                    warn!(error = %e, "handle_exec");
+                    self.bump(|m| {
+                        m.ingest_events_dropped_total
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    });
+                } else {
+                    self.bump(|m| {
+                        m.ingest_exec_outputs_total
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    });
+                }
+            }
+            Event::Transfers(resp) => {
+                if let Err(e) = self.handle_transfers(*resp) {
+                    warn!(error = %e, "handle_transfers");
+                    self.bump(|m| {
+                        m.ingest_events_dropped_total
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    });
+                } else {
+                    self.bump(|m| {
+                        m.ingest_transfers_total
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    });
+                }
+            }
+            Event::PeerPatch(resp) => {
+                match crate::peer::apply_peer_patch(
+                    &self.db,
+                    &self.sse,
+                    resp.as_ref(),
+                    now_ms(),
+                ) {
+                    Err(e) => {
+                        warn!(error = %e, "apply_peer_patch");
                         self.bump(|m| {
                             m.ingest_events_dropped_total
                                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         });
-                    } else {
+                    }
+                    Ok(out) => {
                         self.bump(|m| {
-                            m.ingest_blocks_total
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            use std::sync::atomic::Ordering::Relaxed;
+                            m.ingest_peer_patches_total.fetch_add(1, Relaxed);
+                            if out.became_final {
+                                m.peer_promoted_final_total.fetch_add(1, Relaxed);
+                            }
+                            if out.divergence_repaired {
+                                m.peer_divergence_repaired_total.fetch_add(1, Relaxed);
+                            }
+                            if out.divergence_kept_local {
+                                m.peer_divergence_kept_local_total.fetch_add(1, Relaxed);
+                            }
                         });
                     }
                 }
-                Event::Exec(out) => {
-                    if let Err(e) = self.handle_exec(*out) {
-                        warn!(error = %e, "handle_exec");
-                        self.bump(|m| {
-                            m.ingest_events_dropped_total
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        });
-                    } else {
-                        self.bump(|m| {
-                            m.ingest_exec_outputs_total
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        });
-                    }
+            }
+            Event::LegacyPatch(resp) => {
+                if let Err(e) = crate::peer::apply_legacy_patch(
+                    &self.db,
+                    &self.sse,
+                    resp.as_ref(),
+                    now_ms(),
+                ) {
+                    warn!(error = %e, "apply_legacy_patch");
+                    self.bump(|m| {
+                        m.ingest_events_dropped_total
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    });
+                } else {
+                    self.bump(|m| {
+                        m.ingest_legacy_patches_total
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    });
                 }
-                Event::Transfers(resp) => {
-                    if let Err(e) = self.handle_transfers(*resp) {
-                        warn!(error = %e, "handle_transfers");
-                        self.bump(|m| {
-                            m.ingest_events_dropped_total
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        });
-                    } else {
-                        self.bump(|m| {
-                            m.ingest_transfers_total
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        });
-                    }
-                }
-                Event::PeerPatch(resp) => {
-                    match crate::peer::apply_peer_patch(
-                        &self.db,
-                        &self.sse,
-                        resp.as_ref(),
-                        now_ms(),
-                    ) {
-                        Err(e) => {
-                            warn!(error = %e, "apply_peer_patch");
+            }
+            Event::ForcedVerdict(resp) => {
+                match crate::peer::apply_forced_verdict(&self.db, &self.sse, resp.as_ref(), now_ms()) {
+                    Err(e) => warn!(error = %e, "apply_forced_verdict"),
+                    Ok(changed) => {
+                        if changed {
                             self.bump(|m| {
-                                m.ingest_events_dropped_total
+                                m.peer_divergence_repaired_total
                                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             });
                         }
-                        Ok(out) => {
-                            self.bump(|m| {
-                                use std::sync::atomic::Ordering::Relaxed;
-                                m.ingest_peer_patches_total.fetch_add(1, Relaxed);
-                                if out.became_final {
-                                    m.peer_promoted_final_total.fetch_add(1, Relaxed);
-                                }
-                                if out.divergence_repaired {
-                                    m.peer_divergence_repaired_total.fetch_add(1, Relaxed);
-                                }
-                                if out.divergence_kept_local {
-                                    m.peer_divergence_kept_local_total.fetch_add(1, Relaxed);
-                                }
-                            });
-                        }
                     }
-                }
-                Event::LegacyPatch(resp) => {
-                    if let Err(e) = crate::peer::apply_legacy_patch(
-                        &self.db,
-                        &self.sse,
-                        resp.as_ref(),
-                        now_ms(),
-                    ) {
-                        warn!(error = %e, "apply_legacy_patch");
-                        self.bump(|m| {
-                            m.ingest_events_dropped_total
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        });
-                    } else {
-                        self.bump(|m| {
-                            m.ingest_legacy_patches_total
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        });
-                    }
-                }
-                Event::ForcedVerdict(resp) => {
-                    match crate::peer::apply_forced_verdict(&self.db, &self.sse, resp.as_ref(), now_ms()) {
-                        Err(e) => warn!(error = %e, "apply_forced_verdict"),
-                        Ok(changed) => {
-                            if changed {
-                                self.bump(|m| {
-                                    m.peer_divergence_repaired_total
-                                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                                });
-                            }
-                        }
-                    }
-                }
-                Event::Tick => {
-                    let ts = now_ms();
-                    self.sse.broadcast(SlotSseEvent::Heartbeat { server_time_ms: ts });
                 }
             }
+            Event::Tick => {
+                let ts = now_ms();
+                self.sse.broadcast(SlotSseEvent::Heartbeat { server_time_ms: ts });
+            }
         }
-        info!("ingest worker stopping");
     }
 
     // -----------------------------------------------------------------------
@@ -1485,6 +1546,17 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// `recv` on an optional lane. A retired lane (`None`) never resolves;
+/// [`Ingest::step`] additionally disables its branch, so this only exists
+/// to give both `select!` arms the same future type. Cancel-safe
+/// (`Receiver::recv` is).
+async fn recv_lane(rx: &mut Option<EventRx>) -> Option<Event> {
+    match rx {
+        Some(rx) => rx.recv().await,
+        None => std::future::pending().await,
+    }
+}
+
 /// MAS `NativeAmount` is stored at scale=9 (nanoMAS). Every usage we have
 /// ever shipped assumes that scale, so we expose `mantissa` directly.
 fn native_amount_to_nmas(a: &m::NativeAmount) -> u64 {
@@ -1861,6 +1933,70 @@ mod tests {
         let s = ingest.db.read_slot(3, 0).unwrap().unwrap();
         assert_eq!(s.status, SlotStatus::Final);
         assert_eq!(s.execution_trail_hash.as_deref(), Some("t-x"));
+    }
+
+    /// Strict live priority: with a flood of bulk patches queued, a live
+    /// FINAL exec that lands mid-drain is the very next event the writer
+    /// applies and the FINAL head moves to it immediately, instead of
+    /// waiting behind the patches. Driven one `step()` at a time so the
+    /// outcome is deterministic (no timing involved).
+    #[tokio::test]
+    async fn live_exec_is_applied_before_queued_bulk_patches() {
+        use crate::proto::indexer::v1::FinalSlotResponse;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(dir.path(), "lz4", 4).unwrap();
+        let (live_tx, live_rx) = mpsc::channel::<Event>(8);
+        let (bulk_tx, bulk_rx) = mpsc::channel::<Event>(1024);
+        let mut ingest = Ingest::new(db.clone(), SseHub::new(32), live_rx).with_bulk_rx(bulk_rx);
+
+        // Deep-history catch-up: 500 FINAL-miss patches already queued.
+        const BULK: u64 = 500;
+        const BULK_FROM: u64 = 1000;
+        for p in BULK_FROM..BULK_FROM + BULK {
+            let resp = FinalSlotResponse {
+                period: p,
+                thread: 0,
+                final_known: true,
+                is_miss: true,
+                ..Default::default()
+            };
+            bulk_tx.try_send(Event::PeerPatch(Box::new(resp))).unwrap();
+        }
+
+        // Live lane idle → the writer serves the bulk lane.
+        assert!(ingest.step().await);
+        assert_eq!(db.read_last_final_slot().unwrap(), Some(Slot::new(BULK_FROM, 0)));
+        assert!(db.read_slot(BULK_FROM + 1, 0).unwrap().is_none());
+
+        // A live FINAL exec arrives while 499 patches are still queued: it
+        // must be the next event applied, and the head follows it at once.
+        live_tx
+            .try_send(Event::Exec(Box::new(exec_output(2000, 0, true, Some("live")))))
+            .unwrap();
+        assert!(ingest.step().await);
+        assert_eq!(db.read_last_final_slot().unwrap(), Some(Slot::new(2000, 0)));
+        assert_eq!(
+            db.read_slot(2000, 0).unwrap().unwrap().status,
+            SlotStatus::Final
+        );
+        assert!(
+            db.read_slot(BULK_FROM + 1, 0).unwrap().is_none(),
+            "a queued bulk patch was applied ahead of the live exec"
+        );
+
+        // Live lane idle again: the rest of the flood drains, nothing lost,
+        // and both lanes closing ends the worker.
+        drop(live_tx);
+        drop(bulk_tx);
+        while ingest.step().await {}
+        for p in BULK_FROM..BULK_FROM + BULK {
+            let s = db.read_slot(p, 0).unwrap().unwrap();
+            assert_eq!(s.status, SlotStatus::Final, "period {p}");
+            assert!(s.is_miss, "period {p}");
+        }
+        // Patches for older slots never move the head backwards.
+        assert_eq!(db.read_last_final_slot().unwrap(), Some(Slot::new(2000, 0)));
     }
 
     /// Head race: a peer patch finalised the slot (same verdict) before

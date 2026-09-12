@@ -128,9 +128,11 @@ pub struct BackfillConfig {
     pub range_sparse_threshold: usize,
 
     /// Pause between applying two slots received from a range stream.
-    /// This is the receive-side load throttle: PeerPatch events share the
-    /// ingest channel with the live node stream, so bulk catch-up must be
-    /// paced to never starve real-time processing.
+    /// This is the receive-side load throttle. PeerPatch events ride the
+    /// writer's bulk lane, which is only served when no live node event
+    /// is ready (strict priority, see `ingest.rs`), so this no longer
+    /// protects live latency — it keeps the bulk lane shallow and bounds
+    /// the RocksDB write load bulk catch-up adds on top of live ingest.
     pub apply_pause: Duration,
 
     /// Bandwidth budget for bulk catch-up, in bytes/second (0 = uncapped).
@@ -405,7 +407,7 @@ pub async fn run_backfill(
 /// missing slot is covered. Only slots still present in `needy` are
 /// applied — responses for slots we already hold are discarded without a
 /// write. Every apply is paced by `cfg.apply_pause` so bulk catch-up
-/// cannot starve the live ingest path sharing the same channel.
+/// never piles up a deep queue on the writer's bulk lane.
 ///
 /// Returns `false` only if the ingest channel closed (caller bails out).
 /// Slots remaining in `needy` afterwards were not supplied by any peer.
@@ -525,10 +527,10 @@ pub(crate) async fn range_fill_window_opts(
                         m.backfill_slots_filled_total
                             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
-                    // Receive-side throttle: protect live ingest (fixed
-                    // floor) and the network path (byte-proportional part —
-                    // saturating a home uplink causes bufferbloat that
-                    // delays health RPCs for every peer on that path).
+                    // Receive-side throttle: bound the writer's bulk load
+                    // (fixed floor) and the network path (byte-proportional
+                    // part — saturating a home uplink causes bufferbloat
+                    // that delays health RPCs for every peer on that path).
                     let mut pause = cfg.apply_pause;
                     if cfg.apply_bandwidth > 0 {
                         let bytes = prost::Message::encoded_len(&resp);

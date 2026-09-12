@@ -356,18 +356,33 @@ projection.
 ## 7. Ingestion state machine
 
 Single writer (`src/ingest.rs`). All RocksDB writes are funneled through
-one `mpsc` queue so a slot transition is atomic. Every transition is
-**idempotent**: re-applying the same event leaves the DB identical.
+`mpsc` queues drained by one task so a slot transition is atomic. Every
+transition is **idempotent**: re-applying the same event leaves the DB
+identical.
+
+The writer has two lanes with **strict priority**: the *live* lane
+(`Block` / `Exec` / `Transfers` / `Tick`, from the node) and the *bulk*
+lane (`PeerPatch` / `LegacyPatch` / `ForcedVerdict`, from the backfill
+walker, `[repair]` passes and the legacy importer). A bulk event is
+applied only when no live event is ready (`tokio::select! { biased; … }`),
+so patch volume can never delay finalization; bulk producers pace
+themselves (2 ms per shipped patch) so the bulk lane stays shallow. Order
+is preserved within each lane; cross-lane reordering is safe because every
+apply path is slot-scoped, idempotent and re-reads the current slot state.
 
 ### 7.1 Event types
 
 ```rust
 enum Event {
+    // live lane
     Block(Box<FilledBlock>),                          // NewFilledBlocksServer
     Exec(Box<SlotExecutionOutput>),                   // NewSlotExecutionOutputs (CANDIDATE | FINAL)
     Transfers(Box<NewTransfersInfoServerResponse>),   // NewTransfersInfoServer   (FINAL)
-    PeerPatch(Box<indexer::v1::FinalSlotResponse>),   // from the backfill worker (FINAL)
     Tick,                                             // periodic 5 s — SSE heartbeat, meta flush
+    // bulk lane
+    PeerPatch(Box<indexer::v1::FinalSlotResponse>),   // from the backfill worker (FINAL)
+    LegacyPatch(Box<indexer::v1::FinalSlotResponse>), // legacy DDB importer / [repair] reconstruction
+    ForcedVerdict(Box<indexer::v1::FinalSlotResponse>), // [repair] force_miss
 }
 ```
 

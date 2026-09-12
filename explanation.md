@@ -285,7 +285,11 @@ The indexer has two orthogonal ways to pick up data:
   received (e.g. it wasn't running, or a stream was temporarily disabled).
 
 Both feed a **single writer** — the ingest worker — so ordering invariants are
-identical regardless of provenance.
+identical regardless of provenance. They do so through two lanes: node
+events on the *live* lane, peer / repair / legacy patches on the *bulk*
+lane. The worker serves the live lane with strict priority (a bulk event is
+applied only when no live event is ready), so bulk catch-up can never delay
+finalization.
 
 ### 3.1 Node-stream subscribers
 
@@ -310,7 +314,8 @@ events — and `SlotCompleteness::is_complete` ignores the matching bit (§1.5).
 
 ### 3.2 Ingest state machine
 
-`src/ingest.rs` runs a single async loop that pulls `Event`s and dispatches:
+`src/ingest.rs` runs a single async loop that pulls `Event`s (live lane
+first, bulk lane when live is idle — `Ingest::step`) and dispatches:
 
 ```rust
 pub enum Event {
@@ -553,10 +558,10 @@ round-trip per slot, turning deep-history catch-up from ~10 slots/s
 into hundreds per second. Only slots the local DB misses are applied;
 everything else in the stream is discarded without a write. Each
 apply sleeps `max(apply_pause, encoded_size / apply_bandwidth)` so
-bulk catch-up cannot starve the live ingest channel it shares with
-the node stream, and — just as important — cannot saturate a home
-uplink: bufferbloat on a saturated path delays health RPCs and every
-other peer exchange sharing that link. Sparse windows and
+bulk catch-up keeps the writer's bulk lane shallow (the live lane has
+strict priority regardless), and — just as important — cannot saturate
+a home uplink: bufferbloat on a saturated path delays health RPCs and
+every other peer exchange sharing that link. Sparse windows and
 small bulk leftovers (e.g. slots only reachable through a
 session-only peer — SyncSession cannot carry range streams) still go
 per-slot. Windows nobody can supply cost one or two instantly-empty

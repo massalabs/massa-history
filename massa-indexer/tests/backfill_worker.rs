@@ -169,9 +169,11 @@ async fn consumer_catches_up_from_source() {
         .unwrap();
     let consumer_sse = SseHub::new(32);
 
-    // Ingest worker applies `Event::PeerPatch` messages.
+    // Ingest worker applies `Event::PeerPatch` messages (bulk lane; the
+    // live lane stays idle — no node stream in this test).
+    let (_live_tx, live_rx) = mpsc::channel::<Event>(8);
     let (tx, rx) = mpsc::channel::<Event>(64);
-    let ingest = Ingest::new(consumer_db.clone(), consumer_sse.clone(), rx);
+    let ingest = Ingest::new(consumer_db.clone(), consumer_sse.clone(), live_rx).with_bulk_rx(rx);
     tokio::spawn(ingest.run());
 
     // Peer pool + backfill worker. Restrict to thread 0 so we only
@@ -271,8 +273,9 @@ async fn consumer_follows_peer_head_when_local_node_is_behind() {
     let consumer_db = Db::open(consumer_dir.path(), "lz4", 4).unwrap();
     seed_final_slot(&consumer_db, 10, 0, "trail10");
     let consumer_sse = SseHub::new(32);
+    let (_live_tx, live_rx) = mpsc::channel::<Event>(8);
     let (tx, rx) = mpsc::channel::<Event>(64);
-    let ingest = Ingest::new(consumer_db.clone(), consumer_sse.clone(), rx);
+    let ingest = Ingest::new(consumer_db.clone(), consumer_sse.clone(), live_rx).with_bulk_rx(rx);
     tokio::spawn(ingest.run());
 
     let pool = PeerPool::with_db(
@@ -340,8 +343,9 @@ async fn consumer_bulk_catches_up_via_range_streams() {
         .update_last_final_slot(&Slot::new(139, 0))
         .unwrap();
     let consumer_sse = SseHub::new(32);
+    let (_live_tx, live_rx) = mpsc::channel::<Event>(8);
     let (tx, rx) = mpsc::channel::<Event>(64);
-    let ingest = Ingest::new(consumer_db.clone(), consumer_sse.clone(), rx);
+    let ingest = Ingest::new(consumer_db.clone(), consumer_sse.clone(), live_rx).with_bulk_rx(rx);
     tokio::spawn(ingest.run());
 
     let pool = PeerPool::with_db(

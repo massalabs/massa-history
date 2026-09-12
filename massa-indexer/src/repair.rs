@@ -50,9 +50,14 @@ use tracing::{debug, info, warn};
 
 /// Checkpoint every this many periods (cheap `cf_meta` put).
 const CHECKPOINT_EVERY: u64 = 64;
-/// Breather between periods so the shared ingest channel is never
-/// saturated by a repair task while live frames are flowing.
+/// Breather between periods so a repair task never builds a deep queue
+/// on the writer's bulk lane (live frames have strict priority anyway;
+/// this bounds the RocksDB write load the pass adds).
 const PERIOD_PAUSE: Duration = Duration::from_millis(2);
+/// Pause after every shipped patch — the same 2 ms floor the backfill
+/// walker uses (`BackfillConfig::apply_pause`), so every bulk producer
+/// is paced the same way.
+const APPLY_PAUSE: Duration = Duration::from_millis(2);
 
 /// Tunables for [`run_reconstruct_transfers`].
 #[derive(Debug, Clone)]
@@ -533,6 +538,8 @@ pub async fn run_legacy_sub_transfers(
                         if tx.send(Event::LegacyPatch(Box::new(resp))).await.is_err() {
                             return;
                         }
+                        // Pace like every other bulk producer.
+                        sleep(APPLY_PAUSE).await;
                         rows_total += n;
                         slots_total += 1;
                         if let Some(m) = &metrics {
@@ -689,14 +696,17 @@ mod tests {
         db.write_op(&op(tx_id.clone(), OperationKind::Transaction, Some(ExecStatus::Ok), 42)).unwrap();
         final_slot(&db, slot, vec![tx_id], false);
 
+        // Repair patches ride the bulk lane; the live lane is unused here.
+        let (live_tx, live_rx) = tokio::sync::mpsc::channel::<Event>(8);
         let (tx, rx) = tokio::sync::mpsc::channel::<Event>(64);
         let sse = crate::sse::SseHub::new(16);
-        let ingest = crate::ingest::Ingest::new(db.clone(), sse, rx);
+        let ingest = crate::ingest::Ingest::new(db.clone(), sse, live_rx).with_bulk_rx(rx);
         let ingest_handle = tokio::spawn(ingest.run());
 
         let c = cfg(60, 70);
         run_reconstruct_transfers(db.clone(), tx.clone(), c.clone(), None).await;
         drop(tx);
+        drop(live_tx);
         ingest_handle.await.unwrap();
 
         let rows = db.iter_transfers_for_slot(64, 0).unwrap();
