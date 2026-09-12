@@ -188,6 +188,59 @@ impl DdbLegacySource {
     }
 }
 
+impl DdbLegacySource {
+    /// Fetch only the `_N` **sub-transfer** rows the legacy storer holds
+    /// for `(period, thread)` — ABI coin movements emitted inside
+    /// `CallSC` / `ExecuteSC` executions, which no node can replay once
+    /// its transfers stream was down. One DDB `Query`; rows are decoded
+    /// with [`legacy_sub_transfer_to_transfer`] and numbered from
+    /// `start_index` so they never collide with rows already stored for
+    /// the slot. Rows whose id is in `skip_ids` are dropped (idempotent
+    /// re-runs).
+    pub async fn fetch_sub_transfers(
+        &self,
+        period: u64,
+        thread: u8,
+        block_id: Option<&str>,
+        start_index: u32,
+        block_timestamp_ms: i64,
+        skip_ids: &std::collections::HashSet<String>,
+    ) -> Result<Vec<crate::model::StoredTransfer>, LegacyError> {
+        let slot = crate::model::Slot::new(period, thread);
+        let rows = self.list_slot_rows(period, thread).await?;
+        let mut out = Vec::new();
+        let mut index = start_index;
+        for row in &rows {
+            let Ok(hash) = item_str(row, "Hash") else { continue };
+            if !hash.contains('_') || skip_ids.contains(hash) {
+                continue;
+            }
+            let status = item_num_i64(row, "Status").unwrap_or(0);
+            let original_op_id = item_str_opt(row, "OriginalOperationID");
+            let slot_and_asc = item_str_opt(row, "SlotAndAscIndex");
+            let creator_address = item_str(row, "CreatorAddress").unwrap_or("");
+            let other_address = item_str_opt(row, "OtherAddress");
+            let amount_nmas = native_amount_mantissa(row, "Amount").unwrap_or(0);
+            let view = SubTransferRow {
+                hash,
+                status,
+                original_op_id,
+                slot_and_asc_index: slot_and_asc,
+                creator_address,
+                other_address,
+                amount_nmas,
+            };
+            if let Some(t) =
+                legacy_sub_transfer_to_transfer(&view, slot, block_id, index, block_timestamp_ms)
+            {
+                out.push(t);
+                index = index.saturating_add(1);
+            }
+        }
+        Ok(out)
+    }
+}
+
 #[tonic::async_trait]
 impl LegacySource for DdbLegacySource {
     async fn fetch_slot(

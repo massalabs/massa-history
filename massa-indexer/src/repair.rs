@@ -37,11 +37,12 @@ use crate::{
     metrics::Metrics,
     model::{ExecStatus, OperationKind, Slot, SlotStatus},
     peer::{
-        backfill::{range_fill_window, BackfillConfig},
+        backfill::{range_fill_window_opts, BackfillConfig},
         client::PeerPool,
     },
     proto::indexer::v1::{FinalSlotParts, FinalSlotResponse},
 };
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -219,21 +220,46 @@ pub struct PullPartsConfig {
     pub to_period: u64,
     pub parts: FinalSlotParts,
     pub thread_count: u8,
+    /// Restrict to slots with a successfully executed `CallSC` /
+    /// `ExecuteSC` (see `[repair.pull_parts] require_sc_ops`).
+    pub require_sc_ops: bool,
 }
 
 fn pull_ckpt_key(cfg: &PullPartsConfig) -> String {
     format!(
-        "repair:pull_parts:{}-{}:b{}e{}t{}:next_hi",
+        "repair:pull_parts:{}-{}:b{}e{}t{}{}:next_hi",
         cfg.from_period,
         cfg.to_period,
         u8::from(cfg.parts.block),
         u8::from(cfg.parts.exec_output),
-        u8::from(cfg.parts.transfers)
+        u8::from(cfg.parts.transfers),
+        if cfg.require_sc_ops { ":sc" } else { "" }
     )
 }
 
-/// Does this FINAL slot lack one of the requested parts?
-pub fn slot_lacks_parts(db: &Db, slot: Slot, parts: &FinalSlotParts) -> crate::Result<bool> {
+/// Did this slot execute at least one `CallSC` / `ExecuteSC` successfully?
+/// Those are the only slots in which ABI sub-transfers can exist.
+pub fn slot_has_successful_sc_op(db: &Db, state: &crate::model::SlotState) -> crate::Result<bool> {
+    for op_id in &state.executed_op_ids {
+        if let Some(op) = db.read_op(op_id)? {
+            if matches!(op.kind, OperationKind::CallSc | OperationKind::ExecuteSc)
+                && op.final_exec_status == Some(ExecStatus::Ok)
+            {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Does this FINAL slot lack one of the requested parts (and, when
+/// `require_sc_ops`, did it execute an SC call)?
+pub fn slot_lacks_parts(
+    db: &Db,
+    slot: Slot,
+    parts: &FinalSlotParts,
+    require_sc_ops: bool,
+) -> crate::Result<bool> {
     let Some(s) = db.read_slot(slot.period, slot.thread)? else {
         return Ok(false);
     };
@@ -241,9 +267,16 @@ pub fn slot_lacks_parts(db: &Db, slot: Slot, parts: &FinalSlotParts) -> crate::R
         return Ok(false);
     }
     let c = s.completeness;
-    Ok((parts.block && !s.is_miss && !c.block_body_stored)
+    let lacking = (parts.block && !s.is_miss && !c.block_body_stored)
         || (parts.exec_output && !c.exec_output_final)
-        || (parts.transfers && !c.transfers_stored))
+        || (parts.transfers && !c.transfers_stored);
+    if !lacking {
+        return Ok(false);
+    }
+    if require_sc_ops && !slot_has_successful_sc_op(db, &s)? {
+        return Ok(false);
+    }
+    Ok(true)
 }
 
 /// One descending pass over `[from_period, to_period]` in windows of
@@ -316,7 +349,7 @@ pub async fn run_pull_parts(
                     m.repair_slots_scanned_total
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
-                match slot_lacks_parts(&db, Slot::new(p, t), &cfg.parts) {
+                match slot_lacks_parts(&db, Slot::new(p, t), &cfg.parts, cfg.require_sc_ops) {
                     Ok(true) => needy.push((p, t)),
                     Ok(false) => {}
                     Err(e) => warn!(error = %e, period = p, thread = t, "repair: read_slot failed"),
@@ -325,7 +358,9 @@ pub async fn run_pull_parts(
         }
         if !needy.is_empty() {
             let before = needy.len();
-            if !range_fill_window(&pool, &tx, &bf, metrics.as_ref(), lo, hi, &mut needy).await {
+            if !range_fill_window_opts(&pool, &tx, &bf, metrics.as_ref(), lo, hi, &mut needy, true)
+                .await
+            {
                 return;
             }
             let applied = (before - needy.len()) as u64;
@@ -352,6 +387,199 @@ pub async fn run_pull_parts(
         applied_total,
         left_total,
         "repair: pull_parts COMPLETE — safe to disable [repair.pull_parts]"
+    );
+}
+
+/// Tunables for [`run_legacy_sub_transfers`].
+#[derive(Debug, Clone)]
+pub struct LegacySubTransfersConfig {
+    pub from_period: u64,
+    /// Inclusive upper bound (already resolved from `0` = head).
+    pub to_period: u64,
+    pub thread_count: u8,
+    pub genesis_timestamp_ms: i64,
+    pub t0_ms: i64,
+    /// Concurrent DDB lookups in flight.
+    pub concurrency: usize,
+}
+
+fn legacy_sub_ckpt_key(cfg: &LegacySubTransfersConfig) -> String {
+    format!(
+        "repair:legacy_sub_transfers:{}-{}:next_period",
+        cfg.from_period, cfg.to_period
+    )
+}
+
+/// Ascending pass over `[from_period, to_period]`: for every FINAL slot
+/// that lacks the node's transfer list and executed an SC call
+/// successfully, fetch the legacy storer's `_N` ABI sub-transfer rows
+/// and ship them as `Event::LegacyPatch` (transfers only). Rows already
+/// present for the slot (by id) are skipped, new rows are numbered after
+/// the existing ones, so re-runs are idempotent. Checkpointed.
+pub async fn run_legacy_sub_transfers(
+    db: Db,
+    source: Arc<crate::legacy::DdbLegacySource>,
+    tx: EventTx,
+    cfg: LegacySubTransfersConfig,
+    metrics: Option<Arc<Metrics>>,
+) {
+    use futures::stream::StreamExt;
+    let key = legacy_sub_ckpt_key(&cfg);
+    let start = match db.meta_get_str(&key) {
+        Ok(Some(s)) => s.parse::<u64>().unwrap_or(cfg.from_period).max(cfg.from_period),
+        Ok(None) => cfg.from_period,
+        Err(e) => {
+            warn!(error = %e, "repair: legacy_sub_transfers checkpoint unreadable; starting from from_period");
+            cfg.from_period
+        }
+    };
+    if start > cfg.to_period {
+        info!(
+            from = cfg.from_period,
+            to = cfg.to_period,
+            "repair: legacy_sub_transfers already COMPLETE for this range (checkpoint); nothing to do"
+        );
+        return;
+    }
+    info!(
+        from = cfg.from_period,
+        to = cfg.to_period,
+        resume_at = start,
+        concurrency = cfg.concurrency,
+        "repair: legacy_sub_transfers starting"
+    );
+    let rc = ReconstructConfig {
+        from_period: cfg.from_period,
+        to_period: cfg.to_period,
+        thread_count: cfg.thread_count,
+        genesis_timestamp_ms: cfg.genesis_timestamp_ms,
+        t0_ms: cfg.t0_ms,
+    };
+
+    let mut queried = 0u64;
+    let mut rows_total = 0u64;
+    let mut slots_total = 0u64;
+    let mut errors = 0u64;
+    let mut period = start;
+    while period <= cfg.to_period {
+        if tx.is_closed() {
+            return;
+        }
+        // Local pre-filter for the period: only SC slots without the node
+        // list are worth a DDB round-trip.
+        let mut targets: Vec<(Slot, String, HashSet<String>, u32)> = Vec::new();
+        for thread in 0..cfg.thread_count {
+            let slot = Slot::new(period, thread);
+            if let Some(m) = &metrics {
+                m.repair_slots_scanned_total
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            let Ok(Some(state)) = db.read_slot(slot.period, slot.thread) else { continue };
+            if state.status != SlotStatus::Final
+                || state.is_miss
+                || state.completeness.transfers_stored
+                || state.executed_op_ids.is_empty()
+            {
+                continue;
+            }
+            let Some(bid) = state.final_block_id.as_ref() else { continue };
+            match slot_has_successful_sc_op(&db, &state) {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(e) => {
+                    warn!(error = %e, period, thread, "repair: read_op failed");
+                    continue;
+                }
+            }
+            let existing = db.iter_transfers_for_slot(slot.period, slot.thread).unwrap_or_default();
+            let ids: HashSet<String> = existing.iter().map(|t| t.id.clone()).collect();
+            let next_index = existing
+                .iter()
+                .map(|t| t.index_in_slot + 1)
+                .max()
+                .unwrap_or(0);
+            targets.push((slot, bid.to_string(), ids, next_index));
+        }
+
+        if !targets.is_empty() {
+            let mut fetches = futures::stream::iter(targets.into_iter().map(|(slot, bid, ids, next_index)| {
+                let source = source.clone();
+                let ts = slot_timestamp_ms(&rc, slot);
+                async move {
+                    let r = source
+                        .fetch_sub_transfers(slot.period, slot.thread, Some(&bid), next_index, ts, &ids)
+                        .await;
+                    (slot, bid, r)
+                }
+            }))
+            .buffer_unordered(cfg.concurrency.max(1));
+            while let Some((slot, bid, r)) = fetches.next().await {
+                queried += 1;
+                match r {
+                    Ok(rows) if rows.is_empty() => {}
+                    Ok(rows) => {
+                        let n = rows.len() as u64;
+                        let mut resp = FinalSlotResponse {
+                            period: slot.period,
+                            thread: u32::from(slot.thread),
+                            final_known: true,
+                            is_miss: false,
+                            final_block_id: bid,
+                            ..Default::default()
+                        };
+                        for t in &rows {
+                            resp.transfers.push(crate::codec::transfer_to_peer_pb(t));
+                        }
+                        if tx.send(Event::LegacyPatch(Box::new(resp))).await.is_err() {
+                            return;
+                        }
+                        rows_total += n;
+                        slots_total += 1;
+                        if let Some(m) = &metrics {
+                            m.repair_transfers_reconstructed_total
+                                .fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+                            m.legacy_ddb_slots_filled_total
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+                    Err(e) => {
+                        errors += 1;
+                        if let Some(m) = &metrics {
+                            m.legacy_ddb_errors_total
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        warn!(error = %e, period = slot.period, thread = slot.thread, "repair: legacy sub-transfer fetch failed (left as is)");
+                    }
+                }
+                if let Some(m) = &metrics {
+                    m.legacy_ddb_rpcs_total
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+        }
+
+        if period % CHECKPOINT_EVERY == 0 {
+            if let Err(e) = db.meta_put_str(&key, &(period + 1).to_string()) {
+                warn!(error = %e, "repair: checkpoint write failed");
+            }
+            if period % (CHECKPOINT_EVERY * 256) == 0 {
+                info!(period, queried, slots_total, rows_total, errors, "repair: legacy_sub_transfers progress");
+            }
+        }
+        period += 1;
+        tokio::task::yield_now().await;
+    }
+    if let Err(e) = db.meta_put_str(&key, &(cfg.to_period + 1).to_string()) {
+        warn!(error = %e, "repair: final checkpoint write failed");
+    }
+    info!(
+        from = cfg.from_period,
+        to = cfg.to_period,
+        queried,
+        slots_total,
+        rows_total,
+        errors,
+        "repair: legacy_sub_transfers COMPLETE — safe to disable [repair.legacy_sub_transfers]"
     );
 }
 
@@ -492,9 +720,30 @@ mod tests {
         final_slot(&db, Slot::new(5, 0), vec![], false);
         let only_t = FinalSlotParts { block: false, exec_output: false, transfers: true };
         let only_e = FinalSlotParts { block: false, exec_output: true, transfers: false };
-        assert!(slot_lacks_parts(&db, Slot::new(5, 0), &only_t).unwrap());
-        assert!(!slot_lacks_parts(&db, Slot::new(5, 0), &only_e).unwrap());
+        assert!(slot_lacks_parts(&db, Slot::new(5, 0), &only_t, false).unwrap());
+        assert!(!slot_lacks_parts(&db, Slot::new(5, 0), &only_e, false).unwrap());
         // Unknown slot / candidate → not a pull target.
-        assert!(!slot_lacks_parts(&db, Slot::new(6, 0), &only_t).unwrap());
+        assert!(!slot_lacks_parts(&db, Slot::new(6, 0), &only_t, false).unwrap());
+    }
+
+    /// `require_sc_ops` keeps only slots with a successful CallSC/ExecuteSC.
+    #[test]
+    fn require_sc_ops_filters_slots() {
+        let (db, _dir) = open_db();
+        let only_t = FinalSlotParts { block: false, exec_output: false, transfers: true };
+        let tx_id = mk_test_op_id(1);
+        let call_ok = mk_test_op_id(2);
+        let call_failed = mk_test_op_id(3);
+        db.write_op(&op(tx_id.clone(), OperationKind::Transaction, Some(ExecStatus::Ok), 1)).unwrap();
+        db.write_op(&op(call_ok.clone(), OperationKind::CallSc, Some(ExecStatus::Ok), 0)).unwrap();
+        db.write_op(&op(call_failed.clone(), OperationKind::CallSc, Some(ExecStatus::Failed), 0)).unwrap();
+        final_slot(&db, Slot::new(10, 0), vec![tx_id], false);
+        final_slot(&db, Slot::new(11, 0), vec![call_ok], false);
+        final_slot(&db, Slot::new(12, 0), vec![call_failed], false);
+        assert!(!slot_lacks_parts(&db, Slot::new(10, 0), &only_t, true).unwrap(), "no SC op");
+        assert!(slot_lacks_parts(&db, Slot::new(11, 0), &only_t, true).unwrap(), "successful CallSC");
+        assert!(!slot_lacks_parts(&db, Slot::new(12, 0), &only_t, true).unwrap(), "failed CallSC");
+        // Without the filter all three are targets.
+        assert!(slot_lacks_parts(&db, Slot::new(10, 0), &only_t, false).unwrap());
     }
 }

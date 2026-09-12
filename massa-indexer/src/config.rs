@@ -60,8 +60,31 @@ pub struct Repair {
     pub force_miss: Vec<(u64, u8)>,
     #[serde(default)]
     pub reconstruct_transfers: ReconstructTransfers,
+    /// Zero or more pull passes (`[[repair.pull_parts]]`), run concurrently.
     #[serde(default)]
-    pub pull_parts: PullParts,
+    pub pull_parts: Vec<PullParts>,
+    #[serde(default)]
+    pub legacy_sub_transfers: LegacySubTransfers,
+}
+
+/// `[repair.legacy_sub_transfers]` — for FINAL slots in
+/// `[from_period, to_period]` that never received the node's transfer
+/// list **and** executed a `CallSC` / `ExecuteSC` successfully, fetch the
+/// `_N` ABI sub-transfer rows the legacy block-storer kept in DynamoDB
+/// (the only surviving record of SC-internal coin movements while the
+/// transfers stream was down). One DDB query per such slot — on mainnet
+/// that is ~0.1 % of slots. Uses the `[legacy_ddb]` credentials
+/// (typically from the environment file) regardless of
+/// `legacy_ddb.enabled`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LegacySubTransfers {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub from_period: u64,
+    /// Inclusive upper bound; `0` = the FINAL head at startup.
+    #[serde(default)]
+    pub to_period: u64,
 }
 
 /// `[repair.reconstruct_transfers]` — rebuild the transfer rows the node
@@ -104,6 +127,12 @@ pub struct PullParts {
     pub exec_output: bool,
     #[serde(default)]
     pub transfers: bool,
+    /// Only consider slots that executed a `CallSC` / `ExecuteSC`
+    /// successfully. Pairs with `legacy_sub_transfers` on the host that
+    /// holds the DDB credentials: the other hosts pull exactly the slots
+    /// it could have enriched instead of streaming the whole range.
+    #[serde(default)]
+    pub require_sc_ops: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -530,14 +559,31 @@ impl Config {
                 "repair.reconstruct_transfers: from_period > to_period".into(),
             ));
         }
-        let pp = &self.repair.pull_parts;
-        if pp.enabled {
+        for pp in &self.repair.pull_parts {
+            if !pp.enabled {
+                continue;
+            }
             if pp.to_period != 0 && pp.from_period > pp.to_period {
                 return Err(Error::Config("repair.pull_parts: from_period > to_period".into()));
             }
             if !(pp.block || pp.exec_output || pp.transfers) {
                 return Err(Error::Config(
                     "repair.pull_parts: select at least one of block / exec_output / transfers".into(),
+                ));
+            }
+        }
+        let ls = &self.repair.legacy_sub_transfers;
+        if ls.enabled {
+            if ls.to_period != 0 && ls.from_period > ls.to_period {
+                return Err(Error::Config(
+                    "repair.legacy_sub_transfers: from_period > to_period".into(),
+                ));
+            }
+            if self.legacy_ddb.access_key_id.trim().is_empty()
+                || self.legacy_ddb.secret_access_key.trim().is_empty()
+            {
+                return Err(Error::Config(
+                    "repair.legacy_sub_transfers needs legacy_ddb credentials (INDEXER_LEGACY_DDB_* env)".into(),
                 ));
             }
         }
@@ -704,11 +750,22 @@ force_miss = [[4608113, 0]]
 enabled = true
 from_period = 4608114
 
-[repair.pull_parts]
+[[repair.pull_parts]]
 enabled = true
 from_period = 5000000
 to_period = 5000100
 transfers = true
+
+[[repair.pull_parts]]
+enabled = true
+from_period = 4608114
+exec_output = true
+transfers = true
+require_sc_ops = true
+
+[repair.legacy_sub_transfers]
+enabled = false
+from_period = 4608114
 "#);
         let c = Config::load(f.path()).unwrap();
         assert_eq!(c.peer.stale_candidate_periods, 100);
@@ -718,7 +775,11 @@ transfers = true
         assert!(c.repair.reconstruct_transfers.enabled);
         assert_eq!(c.repair.reconstruct_transfers.from_period, 4_608_114);
         assert_eq!(c.repair.reconstruct_transfers.to_period, 0);
-        assert!(c.repair.pull_parts.enabled && c.repair.pull_parts.transfers);
+        assert_eq!(c.repair.pull_parts.len(), 2);
+        assert!(c.repair.pull_parts[0].enabled && c.repair.pull_parts[0].transfers);
+        assert!(c.repair.pull_parts[1].require_sc_ops && c.repair.pull_parts[1].exec_output);
+        assert!(!c.repair.legacy_sub_transfers.enabled);
+        assert_eq!(c.repair.legacy_sub_transfers.from_period, 4_608_114);
 
         // Defaults when the section is absent.
         let f2 = write_tmp(r#"
@@ -733,7 +794,7 @@ path = "/tmp/ix"
         let c2 = Config::load(f2.path()).unwrap();
         assert!(c2.repair.recheck_periods.is_empty());
         assert!(!c2.repair.reconstruct_transfers.enabled);
-        assert!(!c2.repair.pull_parts.enabled);
+        assert!(c2.repair.pull_parts.is_empty());
         assert_eq!(c2.peer.stale_candidate_periods, 64);
 
         // Rejects inverted ranges and empty part masks.
@@ -757,12 +818,26 @@ grpc_url = "http://127.0.0.1:33037"
 [db]
 path = "/tmp/ix"
 [rest]
-[repair.pull_parts]
+[[repair.pull_parts]]
 enabled = true
 from_period = 1
 to_period = 2
 "#);
         assert!(Config::load(bad2.path()).is_err());
+        // legacy_sub_transfers without credentials is refused.
+        let bad3 = write_tmp(r#"
+[general]
+network = "mainnet"
+[node]
+grpc_url = "http://127.0.0.1:33037"
+[db]
+path = "/tmp/ix"
+[rest]
+[repair.legacy_sub_transfers]
+enabled = true
+from_period = 1
+"#);
+        assert!(Config::load(bad3.path()).is_err());
     }
 
     #[test]

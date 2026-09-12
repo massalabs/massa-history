@@ -418,6 +418,48 @@ pub(crate) async fn range_fill_window(
     win_hi: u64,
     needy: &mut Vec<(u64, u8)>,
 ) -> bool {
+    range_fill_window_opts(pool, tx, cfg, metrics, win_lo, win_hi, needy, false).await
+}
+
+/// True when a FINAL response carries nothing a parts-only pull could
+/// apply: no block / exec / transfer payload and no completeness
+/// assertion for an honoured part.
+fn response_is_empty_for_parts(resp: &crate::proto::indexer::v1::FinalSlotResponse) -> bool {
+    let has_payload = resp.block.is_some()
+        || !resp.operations.is_empty()
+        || !resp.sc_events.is_empty()
+        || !resp.executed_op_ids.is_empty()
+        || !resp.async_msgs.is_empty()
+        || !resp.transfers.is_empty()
+        || !resp.deferred_calls.is_empty();
+    if has_payload {
+        return false;
+    }
+    let honoured = resp.parts.unwrap_or_default();
+    let asserted = resp.completeness_known
+        && ((honoured.exec_output && resp.has_exec_output)
+            || (honoured.transfers && resp.has_transfers)
+            || (honoured.block && resp.has_block_body));
+    !asserted
+}
+
+/// `range_fill_window` with `skip_empty`: when set, responses that carry
+/// no payload and no assertion for the requested parts are not shipped
+/// (a parts-only repair pull over a range where the peer lacks the data
+/// would otherwise pay the per-slot apply pause for nothing). The regular
+/// walker keeps `false` — an empty FINAL response still carries the
+/// verdict a gap slot needs.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn range_fill_window_opts(
+    pool: &PeerPool,
+    tx: &EventTx,
+    cfg: &BackfillConfig,
+    metrics: Option<&Arc<Metrics>>,
+    win_lo: u64,
+    win_hi: u64,
+    needy: &mut Vec<(u64, u8)>,
+    skip_empty: bool,
+) -> bool {
     // Union of operator-enabled parts — same mask `needs_fetch` requests
     // for a fully-missing row.
     let parts = FinalSlotParts {
@@ -469,9 +511,16 @@ pub(crate) async fn range_fill_window(
                     };
                     // Apply only what we actually miss; everything else is
                     // discarded without touching the DB.
-                    if !remaining.remove(&(resp.period, t)) {
+                    if !remaining.contains(&(resp.period, t)) {
                         continue;
                     }
+                    if skip_empty && response_is_empty_for_parts(&resp) {
+                        // Peer has nothing for this slot: leave it needy
+                        // (a later peer in the loop may have it) and pay
+                        // no apply pause.
+                        continue;
+                    }
+                    remaining.remove(&(resp.period, t));
                     if let Some(m) = metrics {
                         m.backfill_slots_filled_total
                             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);

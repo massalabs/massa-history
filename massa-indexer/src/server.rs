@@ -282,10 +282,9 @@ pub async fn run(config: Config) -> Result<()> {
             crate::repair::run_reconstruct_transfers(db_r, tx_r, rcfg, Some(m_r)).await;
         });
     }
-    if config.repair.pull_parts.enabled {
+    for pp in config.repair.pull_parts.iter().filter(|p| p.enabled) {
         match peer_pool.clone() {
             Some(pool) => {
-                let pp = &config.repair.pull_parts;
                 let to = if pp.to_period == 0 { head_now } else { pp.to_period };
                 let pcfg = crate::repair::PullPartsConfig {
                     from_period: pp.from_period,
@@ -296,6 +295,7 @@ pub async fn run(config: Config) -> Result<()> {
                         transfers: pp.transfers,
                     },
                     thread_count: 32,
+                    require_sc_ops: pp.require_sc_ops,
                 };
                 let (db_p, tx_p, m_p) = (db.clone(), tx.clone(), metrics.clone());
                 tokio::spawn(async move {
@@ -303,6 +303,28 @@ pub async fn run(config: Config) -> Result<()> {
                 });
             }
             None => warn!("[repair.pull_parts] enabled but the peer layer is disabled; skipping"),
+        }
+    }
+    if config.repair.legacy_sub_transfers.enabled {
+        let ls = &config.repair.legacy_sub_transfers;
+        let ddb_cfg = Arc::new(crate::legacy::LegacyDdbCfg::from_section(&config.legacy_ddb));
+        match crate::legacy::DdbLegacySource::new(ddb_cfg) {
+            Ok(src) => {
+                let to = if ls.to_period == 0 { head_now } else { ls.to_period };
+                let lcfg = crate::repair::LegacySubTransfersConfig {
+                    from_period: ls.from_period,
+                    to_period: to,
+                    thread_count: meta_now.as_ref().map(|m| m.thread_count).unwrap_or(32),
+                    genesis_timestamp_ms: meta_now.as_ref().map(|m| m.genesis_timestamp_ms).unwrap_or(0),
+                    t0_ms: meta_now.as_ref().map(|m| m.t0_ms).unwrap_or(16_000),
+                    concurrency: config.legacy_ddb.concurrency.max(1),
+                };
+                let (db_l, tx_l, m_l) = (db.clone(), tx.clone(), metrics.clone());
+                tokio::spawn(async move {
+                    crate::repair::run_legacy_sub_transfers(db_l, Arc::new(src), tx_l, lcfg, Some(m_l)).await;
+                });
+            }
+            Err(e) => warn!(error = %e, "failed to construct AWS DDB source; legacy_sub_transfers disabled"),
         }
     }
 

@@ -1840,13 +1840,32 @@ from_period = 4608114
 to_period = 0            # 0 = FINAL head at startup
 
 # Pull the selected parts for FINAL slots lacking them from peers, one
-# descending pass via StreamFinalSlots. Used after a node rebuild on one
-# host to copy its transfers to hosts whose node lacked the stream.
-[repair.pull_parts]
+# descending pass via StreamFinalSlots (several passes allowed). Used
+# after a node rebuild on one host to copy its transfers to hosts whose
+# node lacked the stream, and to settle completeness flags from peers.
+[[repair.pull_parts]]
 enabled = false
 from_period = 5239150
 to_period = 0
 transfers = true
+
+# `require_sc_ops` restricts a pass to slots that executed a CallSC /
+# ExecuteSC successfully — the only slots `legacy_sub_transfers` (below)
+# can have enriched on the credentialled host.
+[[repair.pull_parts]]
+enabled = false
+from_period = 4608114
+to_period = 0
+transfers = true
+require_sc_ops = true
+
+# On the host with DDB credentials: fetch the legacy storer's `_N` ABI
+# sub-transfer rows for SC slots that never got the node's transfer list
+# (~0.1 % of mainnet slots → one DDB query each, minutes, ≪ $1).
+[repair.legacy_sub_transfers]
+enabled = false
+from_period = 4608114
+to_period = 0
 ```
 
 Progress: `massa_indexer_repair_*` counters and the `repair` object in
