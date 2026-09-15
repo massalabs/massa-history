@@ -53,20 +53,25 @@ keeps serving. Adding a third host is purely additive — see §5.
 
 Current live hosts:
 
-| Host       | Address                         | Access                         | Role                           |
-|------------|---------------------------------|--------------------------------|--------------------------------|
-| `indexer1` | `192.168.0.19` (LAN)            | LAN only                       | full node + indexer + explorer |
-| `indexer2` | `192.168.0.29` (LAN)            | LAN only                       | full node + indexer + explorer |
-| `indexer3` | `86.205.18.20` (off-site)       | SSH `damip@… -p 2222`          | full node + indexer + explorer |
+| Host       | Address                              | Access                                | Role                           |
+|------------|--------------------------------------|---------------------------------------|--------------------------------|
+| `indexer1` | `192.168.0.19` (LAN)                 | LAN; SSH `damip@192.168.0.19`         | full node + indexer + explorer |
+| `indexer2` | `88.160.26.145` (Seb's apartment)    | SSH `damip@… -p 35123`                | full node + indexer + explorer |
+| `indexer3` | `86.205.18.20` (off-site)            | SSH `damip@… -p 2222`                 | full node + indexer + explorer |
 
-`indexer1` and `indexer2` share a LAN and peer with each other directly.
-`indexer3` is off-site; since 2026‑09‑11 its WAN `:2222` (SSH) and
-`:9443` (peer gRPC) are forwarded, so it peers with `indexer1`
-(`http://78.194.186.228:9443`) in both directions and `indexer2` reaches
-it through the SyncSession `indexer1` relays. `:8080` (REST) is not
-exposed on the WAN; query it over SSH.
+The three hosts no longer share a LAN. Peer gRPC is the mesh:
 
-On the LAN, each box is reachable as `http://<ip>/` from a browser.
+| Host       | Bind (local)   | Public advertise (what siblings dial)   |
+|------------|----------------|-----------------------------------------|
+| `indexer1` | `:9443`        | `http://78.194.186.228:9443`            |
+| `indexer2` | `:9443`        | `http://88.160.26.145:35124` (NAT → `:9443`) |
+| `indexer3` | `:9443`        | `http://86.205.18.20:9443`              |
+
+Each host lists the other two under `[peer.peers.*]` using those
+advertise URLs, so the mesh is fully bidirectional (unary + SyncSession
+in both directions). REST `:8080` is not exposed on the WAN; query it
+over SSH. On the LAN, `indexer1` is still reachable as
+`http://192.168.0.19/` from a browser.
 
 A separate **public-gateway** box (`192.168.0.44`, reachable from the
 internet as `massa-ai.freeboxos.fr` on SSH port `2222`) terminates TLS
@@ -223,10 +228,9 @@ peer_id  = "indexer1"
 scan_interval_ms = 50
 
 [peer.peers.indexer2]
-url = "http://192.168.0.29:9443"
-# indexer3 is off-site (86.205.18.20). Re-enable once :9443 is reachable:
-# [peer.peers.indexer3]
-# url = "http://86.205.18.20:9443"
+url = "http://88.160.26.145:35124"
+[peer.peers.indexer3]
+url = "http://86.205.18.20:9443"
 
 # Legacy block-storer (DynamoDB) one-shot importer — see §9.
 # Credentials and the `enabled` flag come from the systemd
@@ -943,22 +947,28 @@ where `scp` over a running binary silently fails:
 cd /home/damip/massahistory/massa-indexer
 CXXFLAGS="-include cstdint" cargo build --release
 
-# roll out one indexer at a time so peer sync can fill the restart gap
-for h in 192.168.0.19 192.168.0.29; do  # add indexer3 WAN IP once :9443 is open
-  echo "--- $h ---"
-  scp target/release/massa-indexer damip@$h:/tmp/massa-indexer.new
-  ssh damip@$h '
+# roll out one indexer at a time so peer sync can fill the restart gap.
+# never restart two indexers together.
+#   idx1: ssh damip@192.168.0.19
+#   idx2: ssh -p 35123 damip@88.160.26.145
+#   idx3: ssh -p 2222  damip@86.205.18.20
+deploy_one() {
+  local ssh_args=("$@")
+  echo "--- ${ssh_args[*]} ---"
+  scp "${ssh_args[@]}" target/release/massa-indexer /tmp/massa-indexer.new
+  ssh "${ssh_args[@]}" '
     sudo install -m 0755 /tmp/massa-indexer.new /usr/local/bin/massa-indexer &&
     sudo systemctl restart massa-indexer
   '
-  # give the just-restarted indexer ~30 s to come back and start
-  # accepting peer fills again, then move on
   for i in $(seq 1 30); do
-    out=$(curl -fsS --max-time 3 "http://$h/v1/health" 2>/dev/null || true)
+    out=$(ssh "${ssh_args[@]}" 'curl -fsS --max-time 3 localhost:8080/v1/health' 2>/dev/null || true)
     [[ "$out" == *'"ok"'* ]] && break
     sleep 1
   done
-done
+}
+deploy_one damip@192.168.0.19
+deploy_one -p 35123 damip@88.160.26.145
+deploy_one -p 2222 damip@86.205.18.20
 ```
 
 The systemd unit's `ExecStart=/usr/local/bin/massa-indexer` (set in
@@ -1205,26 +1215,32 @@ guarantees.
 
 ### 8.3 Configuration (in `/data/indexer/indexer.toml`)
 
-Each host binds on `0.0.0.0:9443` and lists the other two as peers.
-Verbatim, on `indexer1`:
+Each host binds on `0.0.0.0:9443` and lists the other two as peers
+using their **public advertise** URLs (not the bind address — `indexer2`
+NATs `:35124` → local `:9443`). Verbatim, on `indexer1`:
 
 ```toml
 [peer]
 enabled  = true
 bind     = "0.0.0.0:9443"
 peer_id  = "indexer1"
+advertise_url = "http://78.194.186.228:9443"
 # Sleep between successive peer RPCs by the backfill scanner.
 # Skip paths (slot already complete-FINAL or speculative) are
 # free; the rate limit only applies on RPC-issuing iterations.
 scan_interval_ms  = 50
 
 [peer.peers.indexer2]
-url = "http://192.168.0.29:9443"
-
-# indexer3 is off-site — enable once WAN :9443 is reachable:
-# [peer.peers.indexer3]
-# url = "http://86.205.18.20:9443"
+url = "http://88.160.26.145:35124"
+[peer.peers.indexer3]
+url = "http://86.205.18.20:9443"
 ```
+
+On `indexer2`, `advertise_url = "http://88.160.26.145:35124"` and the
+peers are indexer1 (`http://78.194.186.228:9443`) and indexer3
+(`http://86.205.18.20:9443`). On `indexer3`,
+`advertise_url = "http://86.205.18.20:9443"` and the peers are
+indexer1 and indexer2 at the same public URLs.
 
 > **Migration note (May 2026):** `batch_size` and
 > `max_rpcs_per_pass` from the previous schema are gone — the new
@@ -1233,10 +1249,9 @@ url = "http://192.168.0.29:9443"
 > harmless during the rolling restart but they should be removed
 > on the next config bump.
 
-…symmetrically on `indexer2` (peers: indexer1 + indexer3) and
-`indexer3` (peers: indexer1 + indexer2). To add a fourth host you'd
-list the new IP under each existing host's `[peer.peers.*]` and add a
-`[peer]` block for the new host listing all three existing IPs.
+To add a fourth host, list its advertise URL under each existing
+host's `[peer.peers.*]` and add a `[peer]` block on the new host
+listing all three existing advertise URLs.
 
 Switching peer mode on/off requires only `systemctl restart
 massa-indexer` — never restart the node (bootstrap is hazardous,
@@ -1244,9 +1259,12 @@ node DB is durable on its own).
 
 ### 8.4 Operational notes
 
-- ufw is `inactive` on the production boxes; the LAN is trusted.
-  When/if these go on the public internet, port `:9443` should be
-  firewalled to the LAN side or wrapped in TLS / WireGuard.
+- ufw is `inactive` on the production boxes. Peer gRPC is now on the
+  public internet for all three (`indexer1` `:9443` via
+  `78.194.186.228`, `indexer2` `:35124` → `:9443`, `indexer3` `:9443`).
+  The protocol is identity-checked (`network` + `schema_version`) but
+  not TLS-wrapped; treat those ports as a trusted-operator mesh, not
+  as a public API. REST `:8080` stays off the WAN.
 - The peer protocol carries an on-disk `schema_version`; when bumped,
   peers running an older schema are dropped at handshake time and the
   operator must roll the rebuild.

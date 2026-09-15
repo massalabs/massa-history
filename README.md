@@ -73,9 +73,9 @@ Each production host is **fully self-contained** — no shared DB, no leader:
 
 | Host | Where | Notes |
 | --- | --- | --- |
-| `indexer1` | LAN `192.168.0.19` | Node + indexer + explorer; was the AWS legacy importer host (now disabled). |
-| `indexer2` | LAN `192.168.0.29` | Node + indexer + explorer; peers with indexer1 on LAN. |
-| `indexer3` | Off-site `86.205.18.20` (SSH `-p 2222`) | Same stack; WAN peer ports not open yet — runs standalone until firewall work lands. |
+| `indexer1` | LAN `192.168.0.19` (peer advertised at `78.194.186.228:9443`) | Node + indexer + explorer; was the AWS legacy importer host (now disabled). |
+| `indexer2` | `88.160.26.145` (SSH `-p 35123`; peer NAT `:35124` → `:9443`) | Node + indexer + explorer; off-LAN at Seb's apartment. |
+| `indexer3` | Off-site `86.205.18.20` (SSH `-p 2222`; peer `:9443`) | Same stack. All three peer bidirectionally over public advertise URLs. |
 
 Public gateway (operator-owned): TLS +
 [`https://massa-ai.freeboxos.fr/explorer/`](https://massa-ai.freeboxos.fr/explorer/)
@@ -179,8 +179,13 @@ rsync -az --delete --exclude config.js dist-explorer/ user@gateway:/var/www/mass
 ### Peer mesh
 
 On each host, `[peer] enabled = true` and `[peer.peers.*]` URLs pointing at
-siblings’ `:9443`. Today indexer1 ↔ indexer2 on the LAN; indexer3 joins when
-its public `:9443` (and related node ports) are reachable.
+siblings’ **public advertise** addresses (not the local bind):
+
+| Host | Advertise |
+| --- | --- |
+| `indexer1` | `http://78.194.186.228:9443` |
+| `indexer2` | `http://88.160.26.145:35124` |
+| `indexer3` | `http://86.205.18.20:9443` |
 
 ### Ports (typical)
 
